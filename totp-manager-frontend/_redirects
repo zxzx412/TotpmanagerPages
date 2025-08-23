@@ -1,6 +1,6 @@
-# SPA 路由重定向 - 所有非文件请求都重定向到 index.html
-/*    /index.html   200
+# API 路由 - 指向 Cloudflare Pages Functions
+# 在同一域名下运行，无需外部重定向
+/api/*  /api/:splat  200
 
-# API 代理重定向到 Node.js 后端（替换为您的后端域名）
-# 请在部署时更新为实际的 API 域名
-/api/*  https://your-api-domain.vercel.app/api/:splat  200
+# SPA 路由重定向 - 所有非 API 和非文件请求都重定向到 index.html
+/*    /index.html   200

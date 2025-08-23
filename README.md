@@ -30,13 +30,23 @@ totptokenmanagerbypages/
 │   ├── _headers                   # Cloudflare Pages 头部配置
 │   ├── _redirects                 # Cloudflare Pages 重定向配置
 │   └── package.json
-├── NODEJS_DEPLOYMENT_GUIDE.md     # Node.js 部署指南
-└── deploy-nodejs.js               # Node.js 一键部署脚本
+├── functions/                     # Cloudflare Pages Functions
+│   └── api/[[route]].js           # API 适配器
+├── wrangler.toml                  # Cloudflare Pages 配置
+├── package.json                   # 根目录构建配置
+└── deploy-nodejs.js               # 一键部署脚本
 ```
 
 ## 🚀 快速开始
 
-### 一键部署 🎆
+## 🎆 一键部署 - Cloudflare Pages（推荐）
+
+### 为什么选择 Cloudflare Pages？
+- ☁️ **统一平台**：前后端都在同一域名下
+- 🚀 **零配置**：自动检测并部署
+- 🌍 **全球 CDN**：超快访问速度
+- 💰 **完全免费**：无限带宽和请求
+- 🔗 **GitHub 集成**：推送代码自动部署
 
 ```bash
 # 克隆项目
@@ -45,14 +55,37 @@ cd totptokenmanagerbypages
 
 # 运行一键部署脚本
 node deploy-nodejs.js
+# 选择选项 1: Cloudflare Pages
 ```
 
-**支持的平台：**
-- ✅ **Vercel** - 零配置，全球 CDN
-- ✅ **Railway** - 内置数据库，优秀体验
-- ✅ **Netlify** - 函数 + 静态站点
-- ✅ **Render** - 免费 PostgreSQL
-- 🐳 **Docker** - 容器化部署
+### 📋 部署步骤
+
+1. **推送代码到 GitHub**
+2. **访问 [Cloudflare Dashboard](https://dash.cloudflare.com/)**
+3. **创建 Pages 项目**
+   - 选择 "Pages" → "Create a project"
+   - 连接您的 GitHub 仓库
+4. **构建设置**（使用默认设置）
+   ```
+   Framework: None
+   Build command: npm run build
+   Build output: totp-manager-frontend/build
+   Root directory: (留空)
+   ```
+5. **环境变量配置**
+   ```
+   NODE_VERSION=18
+   JWT_SECRET=your-super-secret-jwt-key-here
+   GITHUB_CLIENT_ID=your-github-client-id (可选)
+   GITHUB_CLIENT_SECRET=your-github-client-secret (可选)
+   GITHUB_REDIRECT_URI=https://your-pages-domain.pages.dev/api/github/callback
+   FRONTEND_URL=https://your-pages-domain.pages.dev
+   REACT_APP_API_BASE_URL=https://your-pages-domain.pages.dev
+   REACT_APP_GITHUB_AUTH_URL=https://your-pages-domain.pages.dev/api/github/auth
+   ```
+6. **部署完成！** 🎉
+
+### 备选部署平台
 
 ### 本地开发
 
@@ -76,18 +109,75 @@ npm start
 
 ## 🌟 支持的部署平台
 
-### 推荐平台（免费额度大）
-- ✅ **Vercel** - 最简单，零配置部署
-- ✅ **Railway** - 优秀的开发体验
-- ✅ **Netlify** - 支持函数和静态站点
-- ✅ **Render** - 免费的 PostgreSQL 数据库
+### 🎆 首选平台 - Cloudflare Pages
+- ☁️ **统一平台**：前后端同域名部署
+- 🚀 **零配置**：推送代码即部署
+- 💰 **完全免费**：无限制带宽和请求
+- 🌍 **全球 CDN**：超快访问速度
 
-### 其他平台
-- 🔧 **Heroku** - 经典平台
+### 🔄 备选平台（前后端分离）
+- ✅ **Vercel** - 零配置，全球 CDN
+- ✅ **Railway** - 内置数据库，优秀体验
+- ✅ **Netlify** - 函数 + 静态站点
+- ✅ **Render** - 免费 PostgreSQL
+
+### 🔧 其他平台
 - 🐳 **Docker** - 容器化部署
-- ☁️ **任何 VPS** - 完全控制
+- ☁️ **任意 VPS** - 完全控制
 
-## 🚀 方案一：Vercel 一键部署（推荐）
+## 🎆 方案一：Cloudflare Pages 一键部署（推荐）
+
+### 为什么选择 Cloudflare Pages？
+- ☁️ **统一平台**：前后端都在同一域名下，无跨域问题
+- 🚀 **零配置**：自动检测并部署，无需复杂设置
+- 🌍 **全球 CDN**：超快访问速度，覆盖全球
+- 💰 **完全免费**：无限制带宽和请求数
+- 🔗 **GitHub 集成**：推送代码自动部署
+- 🔍 **Functions 支持**：原生支持 Node.js 后端
+
+### 部署步骤
+
+#### 1. 推送代码到 GitHub
+```bash
+git clone <your-repo-url>
+cd totptokenmanagerbypages
+git push origin main
+```
+
+#### 2. 创建 Cloudflare Pages 项目
+1. 访问 [Cloudflare Dashboard](https://dash.cloudflare.com/)
+2. 选择 "Pages" → "Create a project"
+3. 连接您的 GitHub 仓库
+4. 选择项目仓库
+
+#### 3. 构建设置（使用默认值）
+```
+Framework: None
+Build command: npm run build
+Build output: totp-manager-frontend/build
+Root directory: (留空)
+```
+
+#### 4. 环境变量配置
+在 "Settings" → "Environment variables" 中添加：
+```
+NODE_VERSION=18
+JWT_SECRET=your-super-secret-jwt-key-here
+GITHUB_CLIENT_ID=your-github-client-id (可选)
+GITHUB_CLIENT_SECRET=your-github-client-secret (可选)
+GITHUB_REDIRECT_URI=https://your-pages-domain.pages.dev/api/github/callback
+FRONTEND_URL=https://your-pages-domain.pages.dev
+REACT_APP_API_BASE_URL=https://your-pages-domain.pages.dev
+REACT_APP_GITHUB_AUTH_URL=https://your-pages-domain.pages.dev/api/github/auth
+```
+
+#### 5. 部署完成！
+- 前端和后端都在同一个域名下
+- 自动 HTTPS 证书
+- 全球 CDN 加速
+- 无限免费使用
+
+## 🔄 方案二：Vercel + Cloudflare Pages（分离部署）
 
 ### 为什么选择 Vercel？
 - ✨ **零配置**：自动检测 Node.js 项目
