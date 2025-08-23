@@ -68,7 +68,7 @@ async function selectPlatform() {
     log('━'.repeat(50), 'cyan');
     
     log('\n📋 支持的部署平台:', 'yellow');
-    log('1. ☁️ Cloudflare Pages (推荐 - 前端专用)', 'green');
+    log('1. ☁️ Cloudflare Pages (推荐 - 前后端统一部署)', 'green');
     log('2. 🌟 Vercel (零配置，全球 CDN)', 'green');
     log('3. 🚄 Railway (优秀开发体验，内置数据库)', 'green');
     log('4. 🌊 Netlify (函数 + 静态站点)', 'green');
@@ -80,9 +80,25 @@ async function selectPlatform() {
 }
 
 async function deployToCloudflarePages() {
-    log('\n☁️ 部署前端到 Cloudflare Pages...', 'yellow');
+    log('\n☁️ Cloudflare Pages 全栈部署...', 'yellow');
     
-    log('📝 Cloudflare Pages 前端部署指南:', 'cyan');
+    // 检查项目结构
+    const frontendDir = path.join(__dirname, 'totp-manager-frontend');
+    const functionsDir = path.join(__dirname, 'functions');
+    
+    if (!fs.existsSync(frontendDir)) {
+        log('❌ 前端目录不存在', 'red');
+        return false;
+    }
+    
+    if (!fs.existsSync(functionsDir)) {
+        log('❌ Functions 目录不存在', 'red');
+        return false;
+    }
+    
+    log('✅ 项目结构检查完成', 'green');
+    
+    log('\n📝 Cloudflare Pages 全栈部署指南:', 'cyan');
     log('1. 推送代码到 GitHub 仓库', 'white');
     log('2. 访问 https://dash.cloudflare.com/', 'white');
     log('3. 选择 "Pages" → "Create a project"', 'white');
@@ -94,17 +110,19 @@ async function deployToCloudflarePages() {
     log('   Root directory: (留空)', 'cyan');
     log('6. 设置环境变量：', 'white');
     log('   NODE_VERSION=18', 'cyan');
-    log('   REACT_APP_API_BASE_URL=https://your-api-backend.vercel.app', 'cyan');
-    log('   REACT_APP_GITHUB_AUTH_URL=https://your-api-backend.vercel.app/api/github/auth', 'cyan');
+    log('   JWT_SECRET=your-super-secret-jwt-key', 'cyan');
+    log('   REACT_APP_API_BASE_URL=(留空，使用相对路径)', 'cyan');
+    log('   REACT_APP_GITHUB_AUTH_URL=/api/github/auth', 'cyan');
     
-    log('\n🔄 后端 API 部署：', 'yellow');
-    log('前端部署完成后，需要单独部署后端 API：', 'white');
-    log('- 选项 2: Vercel (推荐)', 'green');
-    log('- 选项 3: Railway (内置数据库)', 'green');
-    log('- 选项 4: Netlify', 'green');
+    log('\n✨ 优势：', 'yellow');
+    log('- 前后端同一域名，无跨域问题', 'green');
+    log('- 自动 HTTPS 证书', 'green');
+    log('- 全球 CDN 加速', 'green');
+    log('- 无限免费使用', 'green');
+    log('- 无需复杂的 wrangler 配置', 'green');
     
-    log('\n✅ 前端部署指南完成！', 'green');
-    log('🔗 现在请按照上述步骤部署前端，然后重新运行脚本选择后端部署平台', 'cyan');
+    log('\n✅ 全栈部署指南完成！', 'green');
+    log('🚀 现在请按照上述步骤在 Cloudflare Pages 中部署您的项目', 'cyan');
     
     return true;
 }

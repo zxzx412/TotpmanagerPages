@@ -30,6 +30,8 @@ totptokenmanagerbypages/
 │   ├── _headers                   # Cloudflare Pages 头部配置
 │   ├── _redirects                 # Cloudflare Pages 重定向配置
 │   └── package.json
+├── functions/                     # Cloudflare Pages Functions
+│   └── api/[[route]].js           # 后端 API 入口
 ├── package.json                   # 根目录构建配置
 └── deploy-nodejs.js               # 一键部署脚本
 ```
@@ -55,48 +57,46 @@ node deploy-nodejs.js
 # 选择选项 1: Cloudflare Pages
 ```
 
-### 📋 部署步骤（前后端分离）
+### 📋 部署步骤（全栈统一）
 
-#### 1. 部署前端到 Cloudflare Pages
-1. **推送代码到 GitHub**
-2. **访问 [Cloudflare Dashboard](https://dash.cloudflare.com/)**
-3. **创建 Pages 项目**
-   - 选择 "Pages" → "Create a project"
-   - 连接您的 GitHub 仓库
-4. **构建设置**
-   ```
-   Framework: Create React App
-   Build command: cd totp-manager-frontend && npm ci && npm run build
-   Build output: totp-manager-frontend/build
-   Root directory: (留空)
-   ```
-5. **环境变量配置**
-   ```
-   NODE_VERSION=18
-   REACT_APP_API_BASE_URL=https://your-api-backend.vercel.app
-   REACT_APP_GITHUB_AUTH_URL=https://your-api-backend.vercel.app/api/github/auth
-   ```
-
-#### 2. 部署后端 API
-选择以下任意一个平台部署后端：
-- **Vercel**：最简单，适合新手
-- **Railway**：内置数据库，适合生产
-- **Render**：免费 PostgreSQL
-
-使用部署脚本：
+#### 1. 推送代码到 GitHub
 ```bash
-node deploy-nodejs.js
-# 选择选项 2-4 中的任意一个
+git clone <your-repo-url>
+cd totptokenmanagerbypages
+git push origin main
 ```
 
-#### 3. 更新前端环境变量
-部署后端后，回到 Cloudflare Pages 更新环境变量：
+#### 2. 创建 Cloudflare Pages 项目
+1. 访问 [Cloudflare Dashboard](https://dash.cloudflare.com/)
+2. 选择 "Pages" → "Create a project"
+3. 连接您的 GitHub 仓库
+4. 选择项目仓库
+
+#### 3. 构建设置
 ```
-REACT_APP_API_BASE_URL=https://your-actual-api-domain
-REACT_APP_GITHUB_AUTH_URL=https://your-actual-api-domain/api/github/auth
+Framework: Create React App
+Build command: cd totp-manager-frontend && npm ci && npm run build
+Build output: totp-manager-frontend/build
+Root directory: (留空)
 ```
 
-#### 4. 部署完成！ 🎉
+#### 4. 环境变量配置
+在 "Settings" → "Environment variables" 中添加：
+```
+NODE_VERSION=18
+JWT_SECRET=your-super-secret-jwt-key
+# 以下可选（GitHub OAuth）
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-client-secret
+```
+
+#### 5. 部署完成！
+- 前端和后端 API 都在同一个域名下
+- 自动 HTTPS 证书
+- 全球 CDN 加速
+- 无限免费使用
+
+✨ **无需复杂的 wrangler 配置，一次部署，即可使用！**
 
 ### 备选部署平台
 
