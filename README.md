@@ -52,9 +52,8 @@ totptokenmanagerbypages/
 git clone <repository-url>
 cd totptokenmanagerbypages
 
-# 运行一键部署脚本
+# 运行部署脚本（自动使用 Cloudflare Pages）
 node deploy-nodejs.js
-# 选择选项 1: Cloudflare Pages
 ```
 
 ### 📋 部署步骤（全栈统一）

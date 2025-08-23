@@ -63,21 +63,7 @@ function runCommand(command, cwd = process.cwd(), silent = false) {
     }
 }
 
-async function selectPlatform() {
-    log('\n🚀 TOTP Token Manager - Node.js 版本部署工具', 'bold');
-    log('━'.repeat(50), 'cyan');
-    
-    log('\n📋 支持的部署平台:', 'yellow');
-    log('1. ☁️ Cloudflare Pages (推荐 - 前后端统一部署)', 'green');
-    log('2. 🌟 Vercel (零配置，全球 CDN)', 'green');
-    log('3. 🚄 Railway (优秀开发体验，内置数据库)', 'green');
-    log('4. 🌊 Netlify (函数 + 静态站点)', 'green');
-    log('5. 🐳 Docker (本地构建镜像)', 'green');
-    log('6. 📖 仅显示部署指南', 'blue');
-    
-    const answer = await ask('\n请选择部署方式 (1-6): ');
-    return answer;
-}
+// 移除了 selectPlatform 函数，因为默认使用 Cloudflare Pages
 
 async function deployToCloudflarePages() {
     log('\n☁️ Cloudflare Pages 全栈部署...', 'yellow');
@@ -307,34 +293,14 @@ async function main() {
             return;
         }
         
-        const platform = await selectPlatform();
+        // 默认使用 Cloudflare Pages 全栈部署
+        log('\n🎆 自动执行 Cloudflare Pages 全栈部署', 'bold');
+        log('✨ 前后端统一部署，同域名，完全免费', 'cyan');
         
-        switch (platform) {
-            case '1':
-                await deployToCloudflarePages();
-                break;
-            case '2':
-                await deployToVercel();
-                break;
-            case '3':
-                await deployToRailway();
-                break;
-            case '4':
-                log('\n🌊 Netlify 部署说明:', 'yellow');
-                log('请参考 README.md 中的 Netlify 部署章节', 'cyan');
-                break;
-            case '5':
-                await buildDocker();
-                break;
-            case '6':
-                await showDeploymentGuide();
-                break;
-            default:
-                log('❌ 无效选择', 'red');
-        }
+        await deployToCloudflarePages();
         
-        log('\n🎉 操作完成！', 'green');
-        log('📖 完整文档：README.md', 'cyan');
+        log('\n🎉 部署指南完成！', 'green');
+        log('📖 更多信息请查看: README.md', 'cyan');
         
     } catch (error) {
         log(`\n💥 发生错误: ${error.message}`, 'red');
