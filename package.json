@@ -1,0 +1,29 @@
+{
+  "name": "totp-manager-pages",
+  "version": "1.0.0",
+  "description": "TOTP Token Manager - Cloudflare Pages全栈应用",
+  "scripts": {
+    "build": "cd totp-manager-frontend && npm ci && npm run build",
+    "dev": "wrangler pages dev .",
+    "deploy": "wrangler pages deploy .",
+    "install-frontend": "cd totp-manager-frontend && npm install",
+    "start-frontend": "cd totp-manager-frontend && npm start",
+    "preview": "wrangler pages dev . --compatibility-date=2024-01-01"
+  },
+  "keywords": [
+    "totp",
+    "2fa",
+    "authentication",
+    "cloudflare-pages",
+    "react",
+    "nodejs"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
