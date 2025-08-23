@@ -1,0 +1,22 @@
+# 静态资源缓存
+/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML文件不缓存
+/*.html
+  Cache-Control: no-cache
+
+# JavaScript和CSS文件缓存
+*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+*.css
+  Cache-Control: public, max-age=31536000, immutable
+
+# 安全头设置
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  X-XSS-Protection: 1; mode=block
+  Referrer-Policy: strict-origin-when-cross-origin
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.civilguard.es https://api.github.com https://github.com; font-src 'self' data:;
