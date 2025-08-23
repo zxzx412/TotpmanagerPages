@@ -91,7 +91,7 @@ async function deployToCloudflarePages() {
     log('4. 连接您的 GitHub 仓库', 'white');
     log('5. 设置构建配置：', 'white');
     log('   Framework: Create React App', 'cyan');
-    log('   Build command: cd totp-manager-frontend && npm ci && npm run build', 'cyan');
+    log('   Build command: cd totp-manager-frontend && npm install && npm run build', 'cyan');
     log('   Build output: totp-manager-frontend/build', 'cyan');
     log('   Root directory: (留空)', 'cyan');
     log('6. 设置环境变量：', 'white');

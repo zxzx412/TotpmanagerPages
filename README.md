@@ -74,7 +74,7 @@ git push origin main
 #### 3. 构建设置
 ```
 Framework: Create React App
-Build command: cd totp-manager-frontend && npm ci && npm run build
+Build command: cd totp-manager-frontend && npm install && npm run build
 Build output: totp-manager-frontend/build
 Root directory: (留空)
 ```
