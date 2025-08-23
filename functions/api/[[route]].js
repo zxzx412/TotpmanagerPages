@@ -4,7 +4,10 @@
  */
 
 // 使用 Web Standards API 而不是 Node.js 特定的库
-import { nanoid } from 'nanoid';
+// 使用内置的 crypto.randomUUID() 替代 nanoid
+function generateId() {
+  return crypto.randomUUID();
+}
 
 // 简单的内存存储（演示用，实际应使用 D1 或 KV）
 const users = new Map();
@@ -144,7 +147,7 @@ async function handleRegister(request, env) {
     });
   }
   
-  const userId = nanoid();
+  const userId = generateId();
   const passwordHash = await hashPassword(password);
   
   users.set(username, {
@@ -240,7 +243,7 @@ async function handleAddTotp(request, env) {
     });
   }
   
-  const id = nanoid();
+  const id = generateId();
   const totp = {
     id,
     user_id: user.userId,
