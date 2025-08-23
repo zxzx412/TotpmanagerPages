@@ -30,9 +30,6 @@ totptokenmanagerbypages/
 │   ├── _headers                   # Cloudflare Pages 头部配置
 │   ├── _redirects                 # Cloudflare Pages 重定向配置
 │   └── package.json
-├── functions/                     # Cloudflare Pages Functions
-│   └── api/[[route]].js           # API 适配器
-├── wrangler.toml                  # Cloudflare Pages 配置
 ├── package.json                   # 根目录构建配置
 └── deploy-nodejs.js               # 一键部署脚本
 ```
@@ -58,32 +55,48 @@ node deploy-nodejs.js
 # 选择选项 1: Cloudflare Pages
 ```
 
-### 📋 部署步骤
+### 📋 部署步骤（前后端分离）
 
+#### 1. 部署前端到 Cloudflare Pages
 1. **推送代码到 GitHub**
 2. **访问 [Cloudflare Dashboard](https://dash.cloudflare.com/)**
 3. **创建 Pages 项目**
    - 选择 "Pages" → "Create a project"
    - 连接您的 GitHub 仓库
-4. **构建设置**（使用默认设置）
+4. **构建设置**
    ```
-   Framework: None
-   Build command: npm run build
+   Framework: Create React App
+   Build command: cd totp-manager-frontend && npm ci && npm run build
    Build output: totp-manager-frontend/build
    Root directory: (留空)
    ```
 5. **环境变量配置**
    ```
    NODE_VERSION=18
-   JWT_SECRET=your-super-secret-jwt-key-here
-   GITHUB_CLIENT_ID=your-github-client-id (可选)
-   GITHUB_CLIENT_SECRET=your-github-client-secret (可选)
-   GITHUB_REDIRECT_URI=https://your-pages-domain.pages.dev/api/github/callback
-   FRONTEND_URL=https://your-pages-domain.pages.dev
-   REACT_APP_API_BASE_URL=https://your-pages-domain.pages.dev
-   REACT_APP_GITHUB_AUTH_URL=https://your-pages-domain.pages.dev/api/github/auth
+   REACT_APP_API_BASE_URL=https://your-api-backend.vercel.app
+   REACT_APP_GITHUB_AUTH_URL=https://your-api-backend.vercel.app/api/github/auth
    ```
-6. **部署完成！** 🎉
+
+#### 2. 部署后端 API
+选择以下任意一个平台部署后端：
+- **Vercel**：最简单，适合新手
+- **Railway**：内置数据库，适合生产
+- **Render**：免费 PostgreSQL
+
+使用部署脚本：
+```bash
+node deploy-nodejs.js
+# 选择选项 2-4 中的任意一个
+```
+
+#### 3. 更新前端环境变量
+部署后端后，回到 Cloudflare Pages 更新环境变量：
+```
+REACT_APP_API_BASE_URL=https://your-actual-api-domain
+REACT_APP_GITHUB_AUTH_URL=https://your-actual-api-domain/api/github/auth
+```
+
+#### 4. 部署完成！ 🎉
 
 ### 备选部署平台
 
