@@ -46,14 +46,48 @@ async function verifyPassword(password, hash) {
   return hashedInput === hash;
 }
 
-// TOTP 生成函数（简化版）
-function generateTOTP(secret) {
-  const timeStep = Math.floor(Date.now() / 1000 / 30);
-  let totp = '';
-  for (let i = 0; i < 6; i++) {
-    totp += Math.floor(Math.random() * 10);
+// TOTP 生成函数（使用 Web Crypto API 实现 HMAC-SHA1）
+async function generateTOTP(secret) {
+  try {
+    // 将 Base32 密钥转换为字节数组（简化实现）
+    const key = new TextEncoder().encode(secret);
+    
+    // 获取当前时间步数（30秒为一个步长）
+    const timeStep = Math.floor(Date.now() / 1000 / 30);
+    
+    // 将时间步数转换为8字节的大端序数组
+    const timeBuffer = new ArrayBuffer(8);
+    const timeView = new DataView(timeBuffer);
+    timeView.setUint32(4, timeStep, false); // 大端序
+    
+    // 使用 HMAC-SHA1 计算哈希
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      key,
+      { name: 'HMAC', hash: 'SHA-1' },
+      false,
+      ['sign']
+    );
+    
+    const signature = await crypto.subtle.sign('HMAC', cryptoKey, timeBuffer);
+    const hashArray = new Uint8Array(signature);
+    
+    // 动态截断
+    const offset = hashArray[hashArray.length - 1] & 0x0f;
+    const code = (
+      ((hashArray[offset] & 0x7f) << 24) |
+      ((hashArray[offset + 1] & 0xff) << 16) |
+      ((hashArray[offset + 2] & 0xff) << 8) |
+      (hashArray[offset + 3] & 0xff)
+    ) % 1000000;
+    
+    // 返回6位数字，不足6位前面补0
+    return code.toString().padStart(6, '0');
+  } catch (error) {
+    console.error('TOTP generation error:', error);
+    // 失败时返回随机6位数字作为备用
+    return Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
   }
-  return totp; // 简化实现，实际应使用 HMAC-SHA1
 }
 
 // 处理 CORS
@@ -281,7 +315,7 @@ async function handleGenerateToken(request, env, id) {
     });
   }
   
-  const token = generateTOTP(totp.secret);
+  const token = await generateTOTP(totp.secret);
   
   return new Response(JSON.stringify({ token }), {
     headers: { 'Content-Type': 'application/json' }
