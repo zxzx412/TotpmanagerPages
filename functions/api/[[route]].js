@@ -1435,16 +1435,29 @@ async function handleRestoreFromGist(request, env) {
 
 // 删除备份
 async function handleDeleteBackup(request, env) {
+  console.log('=== Delete Backup Start ===');
   const user = await getAuthenticatedUser(request, env);
   if (!user) {
+    console.log('No authenticated user');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
     });
   }
   
+  console.log('User authenticated:', user.userId);
   const token = githubTokens.get(user.userId);
+  console.log('GitHub token found:', !!token);
+  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
+  
+  if (token) {
+    console.log('Token preview:', token.substring(0, 8) + '...');
+    console.log('Token type:', typeof token);
+    console.log('Token length:', token.length);
+  }
+  
   if (!token) {
+    console.log('No GitHub token found for user');
     return new Response(JSON.stringify({ error: 'GitHub authentication required' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
@@ -1454,7 +1467,10 @@ async function handleDeleteBackup(request, env) {
   const url = new URL(request.url);
   const gistId = url.searchParams.get('id');
   
+  console.log('Gist ID from params:', gistId);
+  
   if (!gistId) {
+    console.log('Missing Gist ID parameter');
     return new Response(JSON.stringify({ error: 'Gist ID is required' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' }
@@ -1462,15 +1478,26 @@ async function handleDeleteBackup(request, env) {
   }
   
   try {
+    console.log('Making DELETE request to GitHub API for gist:', gistId);
+    console.log('Request headers being sent:');
+    console.log('- Authorization: Bearer [REDACTED]');
+    console.log('- Accept: application/vnd.github.v3+json');
+    console.log('- User-Agent: TOTP-Manager/1.0');
+    
     const response = await fetch(`https://api.github.com/gists/${gistId}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `token ${token}`,
-        'Accept': 'application/vnd.github.v3+json'
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'TOTP-Manager/1.0'
       }
     });
     
+    console.log('GitHub API DELETE response status:', response.status);
+    console.log('GitHub API DELETE response headers:', Object.fromEntries(response.headers.entries()));
+    
     if (response.ok || response.status === 204) {
+      console.log('Gist deleted successfully');
       return new Response(JSON.stringify({ 
         success: true,
         message: 'Backup deleted successfully'
@@ -1478,7 +1505,16 @@ async function handleDeleteBackup(request, env) {
         headers: { 'Content-Type': 'application/json' }
       });
     } else {
-      throw new Error(`GitHub API error: ${response.status}`);
+      // 获取详细的错误信息
+      let errorDetails;
+      try {
+        errorDetails = await response.json();
+      } catch (e) {
+        errorDetails = await response.text();
+      }
+      
+      console.log('GitHub API DELETE error details:', errorDetails);
+      throw new Error(`GitHub API error: ${response.status} - ${JSON.stringify(errorDetails)}`);
     }
   } catch (error) {
     console.error('Delete backup error:', error);
