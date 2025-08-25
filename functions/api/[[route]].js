@@ -23,12 +23,36 @@ function createJWT(payload, secret) {
 
 function verifyJWT(token, secret) {
   try {
+    console.log('Verifying JWT token, length:', token.length);
     const [header, data, signature] = token.split('.');
+    
+    if (!header || !data || !signature) {
+      console.log('Invalid JWT format: missing parts');
+      return null;
+    }
+    
+    console.log('JWT parts - header:', header.substring(0, 10), 'data:', data.substring(0, 10), 'signature:', signature.substring(0, 10));
+    
     const payload = JSON.parse(atob(data));
-    if (payload.exp < Date.now()) return null;
+    console.log('JWT payload:', payload);
+    
+    const now = Date.now();
+    console.log('Current time:', now, 'Token exp:', payload.exp, 'Expired:', payload.exp < now);
+    
+    if (payload.exp < now) {
+      console.log('Token expired');
+      return null;
+    }
+    
     const expectedSig = btoa(secret + header + data).slice(0, 32);
-    return signature === expectedSig ? payload : null;
-  } catch {
+    console.log('Expected signature:', expectedSig, 'Actual signature:', signature);
+    
+    const isValid = signature === expectedSig;
+    console.log('Signature valid:', isValid);
+    
+    return isValid ? payload : null;
+  } catch (error) {
+    console.log('JWT verification error:', error);
     return null;
   }
 }
@@ -233,11 +257,13 @@ function getAuthenticatedUser(request, env) {
   const authHeader = request.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.slice(7);
+    console.log('Token from Authorization header:', token.substring(0, 20) + '...');
   }
   
   // 如果 header 中没有，尝试从 Cookie 中获取
   if (!token) {
     const cookieHeader = request.headers.get('cookie');
+    console.log('Cookie header:', cookieHeader);
     if (cookieHeader) {
       const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
         const [key, value] = cookie.trim().split('=');
@@ -245,14 +271,19 @@ function getAuthenticatedUser(request, env) {
         return acc;
       }, {});
       token = cookies.sessionToken;
+      console.log('Token from Cookie:', token ? token.substring(0, 20) + '...' : 'null');
     }
   }
   
   if (!token) {
+    console.log('No token found in request');
     return null;
   }
   
-  return verifyJWT(token, env.JWT_SECRET || 'default-secret');
+  console.log('JWT Secret:', env.JWT_SECRET || 'default-secret');
+  const result = verifyJWT(token, env.JWT_SECRET || 'default-secret');
+  console.log('JWT verification result:', result);
+  return result;
 }
 
 // 注册处理
