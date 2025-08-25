@@ -926,11 +926,16 @@ async function handleGithubAuth(request, env) {
 
 // GitHub OAuth 回调
 async function handleGithubCallback(request, env) {
+  console.log('=== GitHub Callback Start ===');
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   
+  console.log('Callback parameters:', { code: !!code, state });
+  console.log('Available states in memory:', Array.from(githubStates.keys()));
+  
   if (!code || !state) {
+    console.log('Missing code or state parameter');
     return new Response(JSON.stringify({ error: 'Missing code or state parameter' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' }
@@ -938,13 +943,62 @@ async function handleGithubCallback(request, env) {
   }
   
   const userId = githubStates.get(state);
+  console.log('User ID from state:', userId);
+  
   if (!userId) {
-    return new Response(JSON.stringify({ error: 'Invalid state parameter' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    console.log('Invalid or expired state parameter - this is normal in stateless environment');
+    // 在无状态环境中，我们需要从 Cookie 中获取用户信息
+    const user = await getAuthenticatedUser(request, env);
+    if (!user) {
+      console.log('No authenticated user found in request');
+      const frontendUrl = env.FRONTEND_URL || 'https://2fa.wkk.su';
+      return Response.redirect(`${frontendUrl}?github_auth=error&message=not_logged_in`, 302);
+    }
+    console.log('Using authenticated user from request:', user.userId);
+    // 使用从请求中获取的用户ID
+    const actualUserId = user.userId;
+    
+    try {
+      console.log('Attempting to exchange code for access token...');
+      // 获取 access token
+      const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          client_id: env.GITHUB_CLIENT_ID,
+          client_secret: env.GITHUB_CLIENT_SECRET,
+          code: code
+        })
+      });
+      
+      const tokenData = await tokenResponse.json();
+      console.log('Token response:', { 
+        success: !!tokenData.access_token, 
+        error: tokenData.error 
+      });
+      
+      if (tokenData.access_token) {
+        githubTokens.set(actualUserId, tokenData.access_token);
+        console.log('GitHub token stored for user:', actualUserId);
+        
+        // 重定向到前端
+        const frontendUrl = env.FRONTEND_URL || 'https://2fa.wkk.su';
+        console.log('Redirecting to:', `${frontendUrl}?github_auth=success`);
+        return Response.redirect(`${frontendUrl}?github_auth=success`, 302);
+      } else {
+        throw new Error(`Failed to get access token: ${tokenData.error || 'unknown error'}`);
+      }
+    } catch (error) {
+      console.error('GitHub OAuth error:', error);
+      const frontendUrl = env.FRONTEND_URL || 'https://2fa.wkk.su';
+      return Response.redirect(`${frontendUrl}?github_auth=error&message=${encodeURIComponent(error.message)}`, 302);
+    }
   }
   
+  // 原有逻辑（仅在有state的情况下使用）
   githubStates.delete(state);
   
   try {
@@ -968,14 +1022,14 @@ async function handleGithubCallback(request, env) {
       githubTokens.set(userId, tokenData.access_token);
       
       // 重定向到前端
-      const frontendUrl = env.FRONTEND_URL || 'http://localhost:3000';
+      const frontendUrl = env.FRONTEND_URL || 'https://2fa.wkk.su';
       return Response.redirect(`${frontendUrl}?github_auth=success`, 302);
     } else {
       throw new Error('Failed to get access token');
     }
   } catch (error) {
     console.error('GitHub OAuth error:', error);
-    const frontendUrl = env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = env.FRONTEND_URL || 'https://2fa.wkk.su';
     return Response.redirect(`${frontendUrl}?github_auth=error`, 302);
   }
 }
