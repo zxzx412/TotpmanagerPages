@@ -13,15 +13,34 @@ function generateId() {
 const users = new Map();
 const totps = new Map();
 
-// 简单的JWT实现
-function createJWT(payload, secret) {
+// 正确的JWT实现，与标准JWT库兼容
+async function createJWT(payload, secret) {
   const header = btoa(JSON.stringify({alg: 'HS256', typ: 'JWT'}));
   const data = btoa(JSON.stringify({...payload, exp: Date.now() + 3600000})); // 1小时
-  const signature = btoa(secret + header + data).slice(0, 32); // 简化签名
+  
+  // 使用正确的 HMAC-SHA256 算法
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secret);
+  const messageData = encoder.encode(`${header}.${data}`);
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+  const signature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  
   return `${header}.${data}.${signature}`;
 }
 
-function verifyJWT(token, secret) {
+async function verifyJWT(token, secret) {
   try {
     console.log('Verifying JWT token, length:', token.length);
     const [header, data, signature] = token.split('.');
@@ -44,11 +63,27 @@ function verifyJWT(token, secret) {
       return null;
     }
     
-    const expectedSig = btoa(secret + header + data).slice(0, 32);
-    console.log('Expected signature:', expectedSig, 'Actual signature:', signature);
+    // 使用正确的 HMAC-SHA256 验证
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const messageData = encoder.encode(`${header}.${data}`);
     
-    const isValid = signature === expectedSig;
-    console.log('Signature valid:', isValid);
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    
+    // 将Base64URL编码的签名转换为字节数组
+    const signatureBytes = Uint8Array.from(
+      atob(signature.replace(/-/g, '+').replace(/_/g, '/')),
+      c => c.charCodeAt(0)
+    );
+    
+    const isValid = await crypto.subtle.verify('HMAC', cryptoKey, signatureBytes, messageData);
+    console.log('HMAC-SHA256 signature valid:', isValid);
     
     return isValid ? payload : null;
   } catch (error) {
@@ -250,7 +285,7 @@ export async function onRequest(context) {
 }
 
 // 获取认证用户
-function getAuthenticatedUser(request, env) {
+async function getAuthenticatedUser(request, env) {
   let token = null;
   
   // 从 Authorization header 获取 token
@@ -267,7 +302,7 @@ function getAuthenticatedUser(request, env) {
     if (cookieHeader) {
       const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
         const [key, value] = cookie.trim().split('=');
-        acc[key] = value;
+        acc[key] = decodeURIComponent(value); // URL解码Cookie值
         return acc;
       }, {});
       token = cookies.sessionToken;
@@ -281,7 +316,7 @@ function getAuthenticatedUser(request, env) {
   }
   
   console.log('JWT Secret:', env.JWT_SECRET || 'default-secret');
-  const result = verifyJWT(token, env.JWT_SECRET || 'default-secret');
+  const result = await verifyJWT(token, env.JWT_SECRET || 'default-secret');
   console.log('JWT verification result:', result);
   return result;
 }
@@ -376,7 +411,7 @@ async function handleLogout(request, env) {
 
 // 获取TOTP列表
 async function handleGetTotps(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -393,7 +428,7 @@ async function handleGetTotps(request, env) {
 
 // 添加TOTP
 async function handleAddTotp(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -432,7 +467,7 @@ async function handleAddTotp(request, env) {
 
 // 生成令牌
 async function handleGenerateToken(request, env, id) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -457,7 +492,7 @@ async function handleGenerateToken(request, env, id) {
 
 // 删除TOTP
 async function handleDeleteTotp(request, env, id) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -482,7 +517,7 @@ async function handleDeleteTotp(request, env, id) {
 
 // 导出TOTP为二维码
 async function handleExportTotp(request, env, id) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -679,7 +714,7 @@ function base32Encode(bytes) {
 
 // 导入TOTP
 async function handleImportTotp(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -795,7 +830,7 @@ async function handleImportTotp(request, env) {
 
 // 清除所有TOTP
 async function handleClearAllTotps(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -827,7 +862,7 @@ const githubStates = new Map(); // 存储 OAuth state
 
 // 检查 GitHub 认证状态
 async function handleGithubAuthStatus(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -848,7 +883,7 @@ async function handleGithubAuthStatus(request, env) {
 
 // GitHub OAuth 认证
 async function handleGithubAuth(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -932,7 +967,7 @@ async function handleGithubCallback(request, env) {
 
 // 上传到 Gist
 async function handleUploadToGist(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -1006,7 +1041,7 @@ async function handleUploadToGist(request, env) {
 
 // 获取 Gist 版本列表
 async function handleGetGistVersions(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -1063,7 +1098,7 @@ async function handleGetGistVersions(request, env) {
 
 // 从 Gist 恢复
 async function handleRestoreFromGist(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -1155,7 +1190,7 @@ async function handleRestoreFromGist(request, env) {
 
 // 删除备份
 async function handleDeleteBackup(request, env) {
-  const user = getAuthenticatedUser(request, env);
+  const user = await getAuthenticatedUser(request, env);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
