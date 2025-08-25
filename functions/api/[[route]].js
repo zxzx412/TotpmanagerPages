@@ -146,6 +146,10 @@ export async function onRequest(context) {
       return setCORSHeaders(await handleLogin(request, env));
     }
     
+    if (url.pathname === '/api/logout' && method === 'POST') {
+      return setCORSHeaders(await handleLogout(request, env));
+    }
+    
     if (url.pathname === '/api/totp' && method === 'GET') {
       return setCORSHeaders(await handleGetTotps(request, env));
     }
@@ -175,6 +179,35 @@ export async function onRequest(context) {
     if (url.pathname.startsWith('/api/totp/') && method === 'DELETE') {
       const id = url.pathname.split('/')[3];
       return setCORSHeaders(await handleDeleteTotp(request, env, id));
+    }
+
+    // GitHub 相关路由
+    if (url.pathname === '/api/github/auth-status' && method === 'GET') {
+      return setCORSHeaders(await handleGithubAuthStatus(request, env));
+    }
+    
+    if (url.pathname === '/api/github/auth' && method === 'GET') {
+      return setCORSHeaders(await handleGithubAuth(request, env));
+    }
+    
+    if (url.pathname === '/api/github/callback' && method === 'GET') {
+      return setCORSHeaders(await handleGithubCallback(request, env));
+    }
+    
+    if (url.pathname === '/api/github/upload' && method === 'POST') {
+      return setCORSHeaders(await handleUploadToGist(request, env));
+    }
+    
+    if (url.pathname === '/api/github/versions' && method === 'GET') {
+      return setCORSHeaders(await handleGetGistVersions(request, env));
+    }
+    
+    if (url.pathname === '/api/github/restore' && method === 'GET') {
+      return setCORSHeaders(await handleRestoreFromGist(request, env));
+    }
+    
+    if (url.pathname === '/api/github/delete-backup' && method === 'DELETE') {
+      return setCORSHeaders(await handleDeleteBackup(request, env));
     }
 
     // 默认响应
@@ -276,6 +309,16 @@ async function handleLogin(request, env) {
     message: 'Login successful',
     token,
     user: { id: user.id, username }
+  }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+// 登出处理
+async function handleLogout(request, env) {
+  // 简化实现，实际应该将 token 加入黑名单
+  return new Response(JSON.stringify({
+    message: 'Logout successful'
   }), {
     headers: { 'Content-Type': 'application/json' }
   });
@@ -726,4 +769,393 @@ async function handleClearAllTotps(request, env) {
   }), {
     headers: { 'Content-Type': 'application/json' }
   });
+}
+
+// GitHub 相关功能存储（简化版，实际应使用 KV 或 D1）
+const githubTokens = new Map(); // 存储用户的 GitHub token
+const githubStates = new Map(); // 存储 OAuth state
+
+// 检查 GitHub 认证状态
+async function handleGithubAuthStatus(request, env) {
+  const user = getAuthenticatedUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const token = githubTokens.get(user.userId);
+  const authenticated = !!token;
+  
+  return new Response(JSON.stringify({ 
+    authenticated,
+    isTokenExpired: false // 简化实现，实际应检查 token 有效性
+  }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+// GitHub OAuth 认证
+async function handleGithubAuth(request, env) {
+  const user = getAuthenticatedUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  if (!env.GITHUB_CLIENT_ID) {
+    return new Response(JSON.stringify({ error: 'GitHub OAuth not configured' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const state = generateId();
+  githubStates.set(state, user.userId);
+  
+  const redirectUri = `${env.FRONTEND_URL || 'http://localhost:3000'}/api/github/callback`;
+  const authUrl = `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&scope=gist&state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  
+  return Response.redirect(authUrl, 302);
+}
+
+// GitHub OAuth 回调
+async function handleGithubCallback(request, env) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
+  
+  if (!code || !state) {
+    return new Response(JSON.stringify({ error: 'Missing code or state parameter' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const userId = githubStates.get(state);
+  if (!userId) {
+    return new Response(JSON.stringify({ error: 'Invalid state parameter' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  githubStates.delete(state);
+  
+  try {
+    // 获取 access token
+    const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        client_id: env.GITHUB_CLIENT_ID,
+        client_secret: env.GITHUB_CLIENT_SECRET,
+        code: code
+      })
+    });
+    
+    const tokenData = await tokenResponse.json();
+    
+    if (tokenData.access_token) {
+      githubTokens.set(userId, tokenData.access_token);
+      
+      // 重定向到前端
+      const frontendUrl = env.FRONTEND_URL || 'http://localhost:3000';
+      return Response.redirect(`${frontendUrl}?github_auth=success`, 302);
+    } else {
+      throw new Error('Failed to get access token');
+    }
+  } catch (error) {
+    console.error('GitHub OAuth error:', error);
+    const frontendUrl = env.FRONTEND_URL || 'http://localhost:3000';
+    return Response.redirect(`${frontendUrl}?github_auth=error`, 302);
+  }
+}
+
+// 上传到 Gist
+async function handleUploadToGist(request, env) {
+  const user = getAuthenticatedUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const token = githubTokens.get(user.userId);
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'GitHub authentication required' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const { mode } = await request.json();
+  
+  try {
+    // 获取用户的所有 TOTP 数据
+    const userTotps = Array.from(totps.values()).filter(totp => totp.user_id === user.userId);
+    
+    const backupData = {
+      totps: userTotps,
+      backup_time: new Date().toISOString(),
+      version: '1.0'
+    };
+    
+    const gistData = {
+      description: `TOTP Backup - ${new Date().toLocaleString()}`,
+      public: false,
+      files: {
+        'totp-backup.json': {
+          content: JSON.stringify(backupData, null, 2)
+        }
+      }
+    };
+    
+    const response = await fetch('https://api.github.com/gists', {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(gistData)
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      return new Response(JSON.stringify({ 
+        success: true,
+        gist_id: result.id,
+        message: 'Backup uploaded successfully'
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } else {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('Upload to Gist error:', error);
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: error.message 
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 获取 Gist 版本列表
+async function handleGetGistVersions(request, env) {
+  const user = getAuthenticatedUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const token = githubTokens.get(user.userId);
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'GitHub authentication required' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    const response = await fetch('https://api.github.com/gists', {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    if (response.ok) {
+      const gists = await response.json();
+      
+      // 过滤出 TOTP 备份相关的 Gist
+      const totpGists = gists.filter(gist => 
+        gist.description && gist.description.includes('TOTP Backup') &&
+        gist.files && gist.files['totp-backup.json']
+      ).map(gist => ({
+        id: gist.id,
+        description: gist.description,
+        created_at: gist.created_at,
+        updated_at: gist.updated_at
+      }));
+      
+      return new Response(JSON.stringify(totpGists), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } else {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('Get Gist versions error:', error);
+    return new Response(JSON.stringify({ 
+      error: error.message 
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 从 Gist 恢复
+async function handleRestoreFromGist(request, env) {
+  const user = getAuthenticatedUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const token = githubTokens.get(user.userId);
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'GitHub authentication required' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const url = new URL(request.url);
+  const gistId = url.searchParams.get('id');
+  
+  if (!gistId) {
+    return new Response(JSON.stringify({ error: 'Gist ID is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    if (response.ok) {
+      const gist = await response.json();
+      
+      if (gist.files && gist.files['totp-backup.json']) {
+        const backupContent = gist.files['totp-backup.json'].content;
+        const backupData = JSON.parse(backupContent);
+        
+        // 清除当前用户的所有 TOTP
+        const userTotpIds = [];
+        for (const [id, totp] of totps.entries()) {
+          if (totp.user_id === user.userId) {
+            userTotpIds.push(id);
+          }
+        }
+        userTotpIds.forEach(id => totps.delete(id));
+        
+        // 恢复数据
+        let count = 0;
+        if (backupData.totps && Array.isArray(backupData.totps)) {
+          for (const totp of backupData.totps) {
+            const newId = generateId();
+            const newTotp = {
+              ...totp,
+              id: newId,
+              user_id: user.userId
+            };
+            totps.set(newId, newTotp);
+            count++;
+          }
+        }
+        
+        return new Response(JSON.stringify({ 
+          success: true,
+          count,
+          message: `Successfully restored ${count} TOTPs`
+        }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } else {
+        throw new Error('Invalid backup format');
+      }
+    } else {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('Restore from Gist error:', error);
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: error.message 
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 删除备份
+async function handleDeleteBackup(request, env) {
+  const user = getAuthenticatedUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const token = githubTokens.get(user.userId);
+  if (!token) {
+    return new Response(JSON.stringify({ error: 'GitHub authentication required' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const url = new URL(request.url);
+  const gistId = url.searchParams.get('id');
+  
+  if (!gistId) {
+    return new Response(JSON.stringify({ error: 'Gist ID is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    if (response.ok || response.status === 204) {
+      return new Response(JSON.stringify({ 
+        success: true,
+        message: 'Backup deleted successfully'
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } else {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('Delete backup error:', error);
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: error.message 
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 }
