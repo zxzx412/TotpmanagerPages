@@ -250,9 +250,23 @@ export async function onRequest(context) {
       return setCORSHeaders(await handleClearAllTotps(request, env));
     }
     
+    // TOTP generate 路由匹配调试
     if (url.pathname.startsWith('/api/totp/') && url.pathname.endsWith('/generate') && method === 'GET') {
-      const id = url.pathname.split('/')[3];
-      console.log('Matched TOTP generate route, ID:', id);
+      const pathParts = url.pathname.split('/');
+      const id = pathParts[3];
+      console.log('TOTP generate route matched!');
+      console.log('Path parts:', pathParts);
+      console.log('Extracted ID:', id);
+      console.log('ID exists:', !!id);
+      
+      if (!id) {
+        console.log('No ID found in path');
+        return setCORSHeaders(new Response(JSON.stringify({ error: 'Invalid TOTP ID' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }));
+      }
+      
       return setCORSHeaders(await handleGenerateToken(request, env, id));
     }
     
@@ -292,11 +306,25 @@ export async function onRequest(context) {
 
     // 默认响应
     console.log('No route matched for:', method, url.pathname);
-    console.log('Available routes checked:');
-    console.log('- /api/totp/*/generate (GET):', url.pathname.startsWith('/api/totp/') && url.pathname.endsWith('/generate') && method === 'GET');
-    console.log('- URL starts with /api/totp/:', url.pathname.startsWith('/api/totp/'));
-    console.log('- URL ends with /generate:', url.pathname.endsWith('/generate'));
-    console.log('- Method is GET:', method === 'GET');
+    console.log('Available route patterns checked:');
+    console.log('- TOTP generate (/api/totp/*/generate GET):', {
+      startsWithApiTotp: url.pathname.startsWith('/api/totp/'),
+      endsWithGenerate: url.pathname.endsWith('/generate'),
+      isGET: method === 'GET',
+      fullMatch: url.pathname.startsWith('/api/totp/') && url.pathname.endsWith('/generate') && method === 'GET'
+    });
+    console.log('- TOTP export (/api/totp/*/export GET):', {
+      startsWithApiTotp: url.pathname.startsWith('/api/totp/'),
+      endsWithExport: url.pathname.endsWith('/export'),
+      isGET: method === 'GET',
+      fullMatch: url.pathname.startsWith('/api/totp/') && url.pathname.endsWith('/export') && method === 'GET'
+    });
+    console.log('- TOTP delete (/api/totp/* DELETE):', {
+      startsWithApiTotp: url.pathname.startsWith('/api/totp/'),
+      isDELETE: method === 'DELETE',
+      fullMatch: url.pathname.startsWith('/api/totp/') && method === 'DELETE'
+    });
+    
     return setCORSHeaders(new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' }
@@ -494,27 +522,53 @@ async function handleAddTotp(request, env) {
 
 // 生成令牌
 async function handleGenerateToken(request, env, id) {
+  console.log('=== Generate Token Start ===');
+  console.log('TOTP ID:', id);
+  
   const user = await getAuthenticatedUser(request, env);
   if (!user) {
+    console.log('No authenticated user');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
     });
   }
   
+  console.log('User authenticated:', user.userId);
+  console.log('Available TOTPs in memory:', Array.from(totps.keys()));
+  
   const totp = totps.get(id);
+  console.log('TOTP found:', !!totp);
+  
+  if (totp) {
+    console.log('TOTP user_id:', totp.user_id);
+    console.log('TOTP user_info:', totp.user_info);
+    console.log('TOTP secret preview:', totp.secret?.substring(0, 8) + '...');
+  }
+  
   if (!totp || totp.user_id !== user.userId) {
+    console.log('TOTP not found or not owned by user');
     return new Response(JSON.stringify({ error: 'TOTP not found' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' }
     });
   }
   
-  const token = await generateTOTP(totp.secret);
-  
-  return new Response(JSON.stringify({ token }), {
-    headers: { 'Content-Type': 'application/json' }
-  });
+  try {
+    console.log('Generating TOTP token...');
+    const token = await generateTOTP(totp.secret);
+    console.log('Token generated successfully:', token);
+    
+    return new Response(JSON.stringify({ token }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    console.error('Token generation error:', error);
+    return new Response(JSON.stringify({ error: 'Failed to generate token' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 }
 
 // 删除TOTP
@@ -1251,16 +1305,28 @@ async function handleGetGistVersions(request, env) {
 
 // 从 Gist 恢复
 async function handleRestoreFromGist(request, env) {
+  console.log('=== Restore from Gist Start ===');
   const user = await getAuthenticatedUser(request, env);
   if (!user) {
+    console.log('No authenticated user');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
     });
   }
   
+  console.log('User authenticated:', user.userId);
   const token = githubTokens.get(user.userId);
+  console.log('GitHub token found:', !!token);
+  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
+  
+  if (token) {
+    console.log('Token preview:', token.substring(0, 8) + '...');
+    console.log('Token type:', typeof token);
+  }
+  
   if (!token) {
+    console.log('No GitHub token found for user');
     return new Response(JSON.stringify({ error: 'GitHub authentication required' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
@@ -1270,7 +1336,10 @@ async function handleRestoreFromGist(request, env) {
   const url = new URL(request.url);
   const gistId = url.searchParams.get('id');
   
+  console.log('Gist ID from params:', gistId);
+  
   if (!gistId) {
+    console.log('Missing Gist ID parameter');
     return new Response(JSON.stringify({ error: 'Gist ID is required' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' }
@@ -1278,19 +1347,29 @@ async function handleRestoreFromGist(request, env) {
   }
   
   try {
+    console.log('Making request to GitHub API for gist:', gistId);
     const response = await fetch(`https://api.github.com/gists/${gistId}`, {
       headers: {
         'Authorization': `token ${token}`,
-        'Accept': 'application/vnd.github.v3+json'
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'TOTP-Manager/1.0'
       }
     });
     
+    console.log('GitHub API response status:', response.status);
+    console.log('GitHub API response headers:', Object.fromEntries(response.headers.entries()));
+    
     if (response.ok) {
       const gist = await response.json();
+      console.log('Gist data retrieved successfully');
+      console.log('Gist files:', Object.keys(gist.files || {}));
       
       if (gist.files && gist.files['totp-backup.json']) {
         const backupContent = gist.files['totp-backup.json'].content;
+        console.log('Backup content length:', backupContent.length);
+        
         const backupData = JSON.parse(backupContent);
+        console.log('Backup data parsed, TOTPs count:', backupData.totps?.length || 0);
         
         // 清除当前用户的所有 TOTP
         const userTotpIds = [];
@@ -1300,6 +1379,7 @@ async function handleRestoreFromGist(request, env) {
           }
         }
         userTotpIds.forEach(id => totps.delete(id));
+        console.log('Cleared existing TOTPs:', userTotpIds.length);
         
         // 恢复数据
         let count = 0;
@@ -1316,6 +1396,8 @@ async function handleRestoreFromGist(request, env) {
           }
         }
         
+        console.log('Restored TOTPs count:', count);
+        
         return new Response(JSON.stringify({ 
           success: true,
           count,
@@ -1324,10 +1406,20 @@ async function handleRestoreFromGist(request, env) {
           headers: { 'Content-Type': 'application/json' }
         });
       } else {
+        console.log('Invalid backup format - missing totp-backup.json file');
         throw new Error('Invalid backup format');
       }
     } else {
-      throw new Error(`GitHub API error: ${response.status}`);
+      // 获取详细的错误信息
+      let errorDetails;
+      try {
+        errorDetails = await response.json();
+      } catch (e) {
+        errorDetails = await response.text();
+      }
+      
+      console.log('GitHub API error details:', errorDetails);
+      throw new Error(`GitHub API error: ${response.status} - ${JSON.stringify(errorDetails)}`);
     }
   } catch (error) {
     console.error('Restore from Gist error:', error);
