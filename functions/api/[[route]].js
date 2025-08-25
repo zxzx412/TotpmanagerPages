@@ -399,7 +399,7 @@ async function handleRegister(request, env) {
     created_at: new Date().toISOString()
   });
   
-  const token = createJWT({ userId, username }, env.JWT_SECRET || 'default-secret');
+  const token = await createJWT({ userId, username }, env.JWT_SECRET || 'default-secret');
   
   return new Response(JSON.stringify({
     message: 'User registered successfully',
@@ -438,7 +438,7 @@ async function handleLogin(request, env) {
     });
   }
   
-  const token = createJWT({ userId: user.id, username }, env.JWT_SECRET || 'default-secret');
+  const token = await createJWT({ userId: user.id, username }, env.JWT_SECRET || 'default-secret');
   
   return new Response(JSON.stringify({
     message: 'Login successful',
