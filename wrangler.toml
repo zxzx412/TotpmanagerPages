@@ -1,0 +1,24 @@
+name = "totp-manager-pages"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare Pages 项目配置
+# 注意：Pages 项目不需要复杂的 wrangler.toml 配置
+# 大部分设置通过 Cloudflare Dashboard 完成
+
+# KV 命名空间 (用于数据存储)
+[[kv_namespaces]]
+binding = "KV_STORE"
+id = "your-kv-namespace-id"
+preview_id = "your-preview-kv-namespace-id"
+
+# 环境变量 (在 Dashboard 中设置，这里仅作参考)
+# 生产环境变量:
+# NODE_VERSION = "18"
+# JWT_SECRET = "your-super-secret-jwt-key-here"
+# GITHUB_CLIENT_ID = "your-github-client-id"
+# GITHUB_CLIENT_SECRET = "your-github-client-secret"
+# GITHUB_REDIRECT_URI = "https://your-pages-domain.pages.dev/api/github/callback"
+# FRONTEND_URL = "https://your-pages-domain.pages.dev"
+# REACT_APP_API_BASE_URL = "https://your-pages-domain.pages.dev"
+# REACT_APP_GITHUB_AUTH_URL = "https://your-pages-domain.pages.dev/api/github/auth"

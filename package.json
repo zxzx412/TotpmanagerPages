@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "TOTP Token Manager - Cloudflare Pages全栈应用",
   "scripts": {
-    "build": "cd totp-manager-frontend && npm install && npm run build",
+    "build": "cd totp-manager-frontend && npm ci && npm run build",
     "dev": "wrangler pages dev .",
     "deploy": "wrangler pages deploy .",
     "install-frontend": "cd totp-manager-frontend && npm install",

@@ -4,10 +4,6 @@
  */
 
 // 使用 Web Standards API 而不是 Node.js 特定的库
-// 使用内置的 crypto.randomUUID() 替代 nanoid
-function generateId() {
-  return crypto.randomUUID();
-}
 
 // 简单的内存存储（演示用，实际应使用 D1 或 KV）
 const users = new Map();
@@ -46,11 +42,38 @@ async function verifyPassword(password, hash) {
   return hashedInput === hash;
 }
 
+// Base32 解码函数
+function base32Decode(base32) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  let output = [];
+  
+  for (let i = 0; i < base32.length; i++) {
+    const char = base32[i].toUpperCase();
+    if (char === '=') break;
+    
+    const index = alphabet.indexOf(char);
+    if (index === -1) continue;
+    
+    value = (value << 5) | index;
+    bits += 5;
+    
+    if (bits >= 8) {
+      output.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  
+  return new Uint8Array(output);
+}
+
 // TOTP 生成函数（使用 Web Crypto API 实现 HMAC-SHA1）
 async function generateTOTP(secret) {
   try {
-    // 将 Base32 密钥转换为字节数组（简化实现）
-    const key = new TextEncoder().encode(secret);
+    // 清理并解码 Base32 密钥
+    const cleanSecret = secret.replace(/\s+/g, '').toUpperCase();
+    const key = base32Decode(cleanSecret);
     
     // 获取当前时间步数（30秒为一个步长）
     const timeStep = Math.floor(Date.now() / 1000 / 30);
@@ -125,6 +148,19 @@ export async function onRequest(context) {
     
     if (url.pathname === '/api/totp' && method === 'POST') {
       return setCORSHeaders(await handleAddTotp(request, env));
+    }
+    
+    if (url.pathname.startsWith('/api/totp/') && url.pathname.endsWith('/export') && method === 'GET') {
+      const id = url.pathname.split('/')[3];
+      return setCORSHeaders(await handleExportTotp(request, env, id));
+    }
+    
+    if (url.pathname === '/api/totp/import' && method === 'POST') {
+      return setCORSHeaders(await handleImportTotp(request, env));
+    }
+    
+    if (url.pathname === '/api/totp/clear-all' && method === 'POST') {
+      return setCORSHeaders(await handleClearAllTotps(request, env));
     }
     
     if (url.pathname.startsWith('/api/totp/') && url.pathname.endsWith('/generate') && method === 'GET') {
@@ -343,6 +379,140 @@ async function handleDeleteTotp(request, env, id) {
   totps.delete(id);
   
   return new Response(JSON.stringify({ message: 'TOTP deleted successfully' }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+// 导出TOTP为二维码
+async function handleExportTotp(request, env, id) {
+  const user = getAuthenticatedUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const totp = totps.get(id);
+  if (!totp || totp.user_id !== user.userId) {
+    return new Response(JSON.stringify({ error: 'TOTP not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  // 生成 TOTP URI
+  const uri = `otpauth://totp/${encodeURIComponent(totp.user_info)}?secret=${totp.secret}&issuer=${encodeURIComponent('TOTP Manager')}`;
+  
+  return new Response(JSON.stringify({ uri }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+// 导入TOTP
+async function handleImportTotp(request, env) {
+  const user = getAuthenticatedUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const { qrData } = await request.json();
+  
+  if (!qrData) {
+    return new Response(JSON.stringify({ error: 'QR data is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    let count = 0;
+    
+    // 检查是否为 Google Authenticator 迁移格式
+    if (qrData.startsWith('otpauth-migration://')) {
+      // 简化处理迁移格式，实际项目中需要更复杂的解码
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Migration format not supported in this simplified version' 
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // 处理标准 TOTP URI
+    if (qrData.startsWith('otpauth://totp/')) {
+      const url = new URL(qrData);
+      const label = decodeURIComponent(url.pathname.substring(1)); // 移除开头的 '/'
+      const secret = url.searchParams.get('secret');
+      const issuer = url.searchParams.get('issuer') || 'Unknown';
+      
+      if (!secret) {
+        throw new Error('Invalid TOTP URI: missing secret');
+      }
+      
+      const id = generateId();
+      const totp = {
+        id,
+        user_id: user.userId,
+        user_info: label || issuer,
+        secret: secret.replace(/\s+/g, ''),
+        created_at: new Date().toISOString()
+      };
+      
+      totps.set(id, totp);
+      count = 1;
+    } else {
+      throw new Error('Invalid QR code format');
+    }
+    
+    return new Response(JSON.stringify({ 
+      success: true, 
+      count,
+      message: `Successfully imported ${count} TOTP` 
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('Import TOTP error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 清除所有TOTP
+async function handleClearAllTotps(request, env) {
+  const user = getAuthenticatedUser(request, env);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  // 删除当前用户的所有TOTP
+  const userTotpIds = [];
+  for (const [id, totp] of totps.entries()) {
+    if (totp.user_id === user.userId) {
+      userTotpIds.push(id);
+    }
+  }
+  
+  userTotpIds.forEach(id => totps.delete(id));
+  
+  return new Response(JSON.stringify({ 
+    message: 'All TOTPs cleared successfully',
+    count: userTotpIds.length 
+  }), {
     headers: { 'Content-Type': 'application/json' }
   });
 }
