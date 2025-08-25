@@ -15,15 +15,8 @@ const totps = new Map();
 
 // 正确的JWT实现，与标准JWT库兼容
 async function createJWT(payload, secret) {
-  console.log('=== Creating JWT ===');
-  console.log('Payload:', payload);
-  console.log('Secret provided:', !!secret);
-  
   const header = btoa(JSON.stringify({alg: 'HS256', typ: 'JWT'}));
   const data = btoa(JSON.stringify({...payload, exp: Date.now() + 3600000})); // 1小时
-  
-  console.log('Header:', header);
-  console.log('Data:', data);
   
   // 使用正确的 HMAC-SHA256 算法
   const encoder = new TextEncoder();
@@ -45,41 +38,27 @@ async function createJWT(payload, secret) {
     .replace(/=+$/, '');
   
   const fullToken = `${header}.${data}.${signature}`;
-  console.log('Generated signature:', signature);
-  console.log('Full token length:', fullToken.length);
-  console.log('=== End JWT Creation ===');
-  
   return fullToken;
 }
 
 async function verifyJWT(token, secret) {
   try {
-    console.log('=== JWT Verification Debug ===');
-    console.log('Input token:', token);
-    console.log('Secret:', secret ? 'provided' : 'missing');
-    
     const [header, data, signature] = token.split('.');
     
     if (!header || !data || !signature) {
       console.log('Invalid JWT format: missing parts');
-      console.log('Parts found:', { header: !!header, data: !!data, signature: !!signature });
       return null;
     }
-    
-    console.log('JWT parts lengths - header:', header.length, 'data:', data.length, 'signature:', signature.length);
     
     let payload;
     try {
       payload = JSON.parse(atob(data));
-      console.log('JWT payload decoded:', payload);
     } catch (e) {
       console.log('Failed to decode JWT payload:', e.message);
       return null;
     }
     
     const now = Date.now();
-    console.log('Time check - current:', now, 'token exp:', payload.exp, 'expired:', payload.exp < now);
-    
     if (payload.exp < now) {
       console.log('Token expired');
       return null;
@@ -90,8 +69,6 @@ async function verifyJWT(token, secret) {
     const keyData = encoder.encode(secret);
     const messageData = encoder.encode(`${header}.${data}`);
     
-    console.log('Creating crypto key with secret...');
-    
     const cryptoKey = await crypto.subtle.importKey(
       'raw',
       keyData,
@@ -100,8 +77,6 @@ async function verifyJWT(token, secret) {
       ['verify']
     );
     
-    console.log('Crypto key created successfully');
-    
     // 将Base64URL编码的签名转换为字节数组
     let signatureBytes;
     try {
@@ -109,29 +84,20 @@ async function verifyJWT(token, secret) {
       const base64Signature = signature.replace(/-/g, '+').replace(/_/g, '/');
       // 添加填充
       const paddedSignature = base64Signature + '=='.substring(0, (4 - base64Signature.length % 4) % 4);
-      console.log('Original signature:', signature);
-      console.log('Base64 signature:', base64Signature);
-      console.log('Padded signature:', paddedSignature);
       
       signatureBytes = Uint8Array.from(
         atob(paddedSignature),
         c => c.charCodeAt(0)
       );
-      console.log('Signature bytes length:', signatureBytes.length);
     } catch (e) {
       console.log('Failed to decode signature:', e.message);
       return null;
     }
     
-    console.log('Verifying HMAC signature...');
     const isValid = await crypto.subtle.verify('HMAC', cryptoKey, signatureBytes, messageData);
-    console.log('HMAC-SHA256 signature valid:', isValid);
-    console.log('=== End JWT Verification ===');
-    
     return isValid ? payload : null;
   } catch (error) {
     console.log('JWT verification error:', error.message);
-    console.log('Error stack:', error.stack);
     return null;
   }
 }
@@ -222,6 +188,11 @@ async function generateTOTP(secret) {
 
 // 处理 CORS
 function setCORSHeaders(response) {
+  // 检查response是否是重定向，如果是则不设置CORS headers
+  if (response.status >= 300 && response.status < 400) {
+    return response;
+  }
+  
   response.headers.set('Access-Control-Allow-Origin', '*');
   response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -330,20 +301,17 @@ export async function onRequest(context) {
 
 // 获取认证用户
 async function getAuthenticatedUser(request, env) {
-  console.log('=== getAuthenticatedUser Start ===');
   let token = null;
   
   // 从 Authorization header 获取 token
   const authHeader = request.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.slice(7);
-    console.log('Token from Authorization header (first 30 chars):', token.substring(0, 30) + '...');
   }
   
   // 如果 header 中没有，尝试从 Cookie 中获取
   if (!token) {
     const cookieHeader = request.headers.get('cookie');
-    console.log('Cookie header:', cookieHeader);
     if (cookieHeader) {
       const cookies = {};
       // 正确解析Cookie，处理包含等号的值
@@ -356,24 +324,15 @@ async function getAuthenticatedUser(request, env) {
         }
       });
       token = cookies.sessionToken;
-      console.log('Token from Cookie (first 30 chars):', token ? token.substring(0, 30) + '...' : 'null');
-      console.log('Token from Cookie (last 30 chars):', token ? '...' + token.substring(token.length - 30) : 'null');
-      console.log('All cookies found:', Object.keys(cookies));
     }
   }
   
   if (!token) {
-    console.log('No token found in request');
-    console.log('=== getAuthenticatedUser End: No Token ===');
     return null;
   }
   
   const jwtSecret = env.JWT_SECRET || 'default-secret';
-  console.log('JWT Secret configured:', jwtSecret !== 'default-secret');
-  
   const result = await verifyJWT(token, jwtSecret);
-  console.log('Final verification result:', result ? 'SUCCESS' : 'FAILED');
-  console.log('=== getAuthenticatedUser End ===');
   return result;
 }
 
