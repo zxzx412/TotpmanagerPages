@@ -205,6 +205,11 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const method = request.method;
 
+  console.log(`=== API Request: ${method} ${url.pathname} ===`);
+  console.log('Full URL:', url.href);
+  console.log('Pathname parts:', url.pathname.split('/'));
+  console.log('Method:', method);
+
   // 处理 CORS 预检请求
   if (method === 'OPTIONS') {
     return setCORSHeaders(new Response(null, { status: 200 }));
@@ -247,6 +252,7 @@ export async function onRequest(context) {
     
     if (url.pathname.startsWith('/api/totp/') && url.pathname.endsWith('/generate') && method === 'GET') {
       const id = url.pathname.split('/')[3];
+      console.log('Matched TOTP generate route, ID:', id);
       return setCORSHeaders(await handleGenerateToken(request, env, id));
     }
     
@@ -285,6 +291,12 @@ export async function onRequest(context) {
     }
 
     // 默认响应
+    console.log('No route matched for:', method, url.pathname);
+    console.log('Available routes checked:');
+    console.log('- /api/totp/*/generate (GET):', url.pathname.startsWith('/api/totp/') && url.pathname.endsWith('/generate') && method === 'GET');
+    console.log('- URL starts with /api/totp/:', url.pathname.startsWith('/api/totp/'));
+    console.log('- URL ends with /generate:', url.pathname.endsWith('/generate'));
+    console.log('- Method is GET:', method === 'GET');
     return setCORSHeaders(new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' }
@@ -877,15 +889,26 @@ const githubStates = new Map(); // 存储 OAuth state
 
 // 检查 GitHub 认证状态
 async function handleGithubAuthStatus(request, env) {
+  console.log('=== Check GitHub Auth Status ===');
   const user = await getAuthenticatedUser(request, env);
   if (!user) {
+    console.log('No authenticated user');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
     });
   }
   
+  console.log('User authenticated:', user.userId);
   const token = githubTokens.get(user.userId);
+  console.log('GitHub token found:', !!token);
+  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
+  
+  if (token) {
+    console.log('Token preview:', token.substring(0, 8) + '...');
+    console.log('Token type:', typeof token);
+  }
+  
   const authenticated = !!token;
   
   return new Response(JSON.stringify({ 
@@ -1142,16 +1165,28 @@ async function handleUploadToGist(request, env) {
 
 // 获取 Gist 版本列表
 async function handleGetGistVersions(request, env) {
+  console.log('=== Get Gist Versions Start ===');
   const user = await getAuthenticatedUser(request, env);
   if (!user) {
+    console.log('No authenticated user');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
     });
   }
   
+  console.log('User authenticated:', user.userId);
   const token = githubTokens.get(user.userId);
+  console.log('GitHub token found:', !!token);
+  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
+  
+  if (token) {
+    console.log('Token preview:', token.substring(0, 8) + '...');
+    console.log('Token type:', typeof token);
+  }
+  
   if (!token) {
+    console.log('No GitHub token found for user');
     return new Response(JSON.stringify({ error: 'GitHub authentication required' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
@@ -1159,15 +1194,21 @@ async function handleGetGistVersions(request, env) {
   }
   
   try {
+    console.log('Making request to GitHub API for gists...');
     const response = await fetch('https://api.github.com/gists', {
       headers: {
         'Authorization': `token ${token}`,
-        'Accept': 'application/vnd.github.v3+json'
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'TOTP-Manager/1.0'
       }
     });
     
+    console.log('GitHub API response status:', response.status);
+    console.log('GitHub API response headers:', Object.fromEntries(response.headers.entries()));
+    
     if (response.ok) {
       const gists = await response.json();
+      console.log('Total gists found:', gists.length);
       
       // 过滤出 TOTP 备份相关的 Gist
       const totpGists = gists.filter(gist => 
@@ -1180,11 +1221,22 @@ async function handleGetGistVersions(request, env) {
         updated_at: gist.updated_at
       }));
       
+      console.log('TOTP backup gists found:', totpGists.length);
+      
       return new Response(JSON.stringify(totpGists), {
         headers: { 'Content-Type': 'application/json' }
       });
     } else {
-      throw new Error(`GitHub API error: ${response.status}`);
+      // 获取详细的错误信息
+      let errorDetails;
+      try {
+        errorDetails = await response.json();
+      } catch (e) {
+        errorDetails = await response.text();
+      }
+      
+      console.log('GitHub API error details:', errorDetails);
+      throw new Error(`GitHub API error: ${response.status} - ${JSON.stringify(errorDetails)}`);
     }
   } catch (error) {
     console.error('Get Gist versions error:', error);
