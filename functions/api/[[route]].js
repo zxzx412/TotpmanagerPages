@@ -1420,7 +1420,7 @@ async function handleUploadToGist(request, env) {
   }
   
   console.log('User authenticated:', user.userId);
-  const token = githubTokens.get(user.userId);
+  const token = await getGithubToken(env, user.userId);
   console.log('GitHub token found:', !!token);
   console.log('Token preview:', token ? token.substring(0, 8) + '...' : 'null');
   
@@ -1437,7 +1437,7 @@ async function handleUploadToGist(request, env) {
   
   try {
     // 获取用户的所有 TOTP 数据
-    const userTotps = Array.from(totps.values()).filter(totp => totp.user_id === user.userId);
+    const userTotps = await getUserTotps(env, user.userId);
     console.log('User TOTPs count:', userTotps.length);
     
     const backupData = {
@@ -1521,9 +1521,8 @@ async function handleGetGistVersions(request, env) {
   }
   
   console.log('User authenticated:', user.userId);
-  const token = githubTokens.get(user.userId);
+  const token = await getGithubToken(env, user.userId);
   console.log('GitHub token found:', !!token);
-  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
   
   if (token) {
     console.log('Token preview:', token.substring(0, 8) + '...');
@@ -1607,9 +1606,8 @@ async function handleRestoreFromGist(request, env) {
   }
   
   console.log('User authenticated:', user.userId);
-  const token = githubTokens.get(user.userId);
+  const token = await getGithubToken(env, user.userId);
   console.log('GitHub token found:', !!token);
-  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
   
   if (token) {
     console.log('Token preview:', token.substring(0, 8) + '...');
@@ -1663,17 +1661,15 @@ async function handleRestoreFromGist(request, env) {
         console.log('Backup data parsed, TOTPs count:', backupData.totps?.length || 0);
         
         // 清除当前用户的所有 TOTP
-        const userTotpIds = [];
-        for (const [id, totp] of totps.entries()) {
-          if (totp.user_id === user.userId) {
-            userTotpIds.push(id);
-          }
+        const userTotpIds = await getKVData(env, `user_totps:${user.userId}`) || [];
+        for (const id of userTotpIds) {
+          await deleteTotp(env, id);
         }
-        userTotpIds.forEach(id => totps.delete(id));
         console.log('Cleared existing TOTPs:', userTotpIds.length);
         
         // 恢复数据
         let count = 0;
+        const newTotpIds = [];
         if (backupData.totps && Array.isArray(backupData.totps)) {
           for (const totp of backupData.totps) {
             const newId = generateId();
@@ -1682,10 +1678,14 @@ async function handleRestoreFromGist(request, env) {
               id: newId,
               user_id: user.userId
             };
-            totps.set(newId, newTotp);
+            await setTotp(env, newId, newTotp);
+            newTotpIds.push(newId);
             count++;
           }
         }
+        
+        // 更新用户的 TOTP 列表
+        await setKVData(env, `user_totps:${user.userId}`, newTotpIds);
         
         console.log('Restored TOTPs count:', count);
         
@@ -1737,9 +1737,8 @@ async function handleDeleteBackup(request, env) {
   }
   
   console.log('User authenticated:', user.userId);
-  const token = githubTokens.get(user.userId);
+  const token = await getGithubToken(env, user.userId);
   console.log('GitHub token found:', !!token);
-  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
   
   if (token) {
     console.log('Token preview:', token.substring(0, 8) + '...');
