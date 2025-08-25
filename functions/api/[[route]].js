@@ -9,9 +9,123 @@ function generateId() {
   return crypto.randomUUID();
 }
 
-// 简单的内存存储（演示用，实际应使用 D1 或 KV）
-const users = new Map();
-const totps = new Map();
+// 使用 Cloudflare KV 存储替代内存存储
+// KV 命名空间将通过环境变量提供
+
+// KV 操作辅助函数
+async function getKVData(env, key) {
+  try {
+    const data = await env.TOTP_KV.get(key);
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error(`Error getting KV data for key ${key}:`, error);
+    return null;
+  }
+}
+
+async function setKVData(env, key, value) {
+  try {
+    await env.TOTP_KV.put(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.error(`Error setting KV data for key ${key}:`, error);
+    return false;
+  }
+}
+
+async function deleteKVData(env, key) {
+  try {
+    await env.TOTP_KV.delete(key);
+    return true;
+  } catch (error) {
+    console.error(`Error deleting KV data for key ${key}:`, error);
+    return false;
+  }
+}
+
+// 用户管理函数
+async function getUser(env, username) {
+  return await getKVData(env, `user:${username}`);
+}
+
+async function setUser(env, username, userData) {
+  return await setKVData(env, `user:${username}`, userData);
+}
+
+// TOTP 管理函数
+async function getTotp(env, id) {
+  return await getKVData(env, `totp:${id}`);
+}
+
+async function setTotp(env, id, totpData) {
+  return await setKVData(env, `totp:${id}`, totpData);
+}
+
+async function deleteTotp(env, id) {
+  return await deleteKVData(env, `totp:${id}`);
+}
+
+async function getUserTotps(env, userId) {
+  // 获取用户的所有 TOTP ID 列表
+  const totpIds = await getKVData(env, `user_totps:${userId}`);
+  if (!totpIds || !Array.isArray(totpIds)) {
+    return [];
+  }
+  
+  // 获取所有 TOTP 数据
+  const totps = [];
+  for (const id of totpIds) {
+    const totp = await getTotp(env, id);
+    if (totp) {
+      totps.push(totp);
+    }
+  }
+  
+  return totps;
+}
+
+async function addUserTotp(env, userId, totpId) {
+  const totpIds = await getKVData(env, `user_totps:${userId}`) || [];
+  if (!totpIds.includes(totpId)) {
+    totpIds.push(totpId);
+    await setKVData(env, `user_totps:${userId}`, totpIds);
+  }
+}
+
+async function removeUserTotp(env, userId, totpId) {
+  const totpIds = await getKVData(env, `user_totps:${userId}`) || [];
+  const newTotpIds = totpIds.filter(id => id !== totpId);
+  await setKVData(env, `user_totps:${userId}`, newTotpIds);
+}
+
+// GitHub token 管理函数
+async function getGithubToken(env, userId) {
+  return await getKVData(env, `github_token:${userId}`);
+}
+
+async function setGithubToken(env, userId, token) {
+  return await setKVData(env, `github_token:${userId}`, token);
+}
+
+// GitHub OAuth state 管理函数
+async function getGithubState(env, state) {
+  return await getKVData(env, `github_state:${state}`);
+}
+
+async function setGithubState(env, state, userId) {
+  // OAuth state 设置较短的过期时间（10分钟）
+  try {
+    await env.TOTP_KV.put(`github_state:${state}`, JSON.stringify(userId), { expirationTtl: 600 });
+    return true;
+  } catch (error) {
+    console.error(`Error setting GitHub state:`, error);
+    return false;
+  }
+}
+
+async function deleteGithubState(env, state) {
+  return await deleteKVData(env, `github_state:${state}`);
+}
 
 // 正确的JWT实现，与标准JWT库兼容
 async function createJWT(payload, secret) {
@@ -392,7 +506,9 @@ async function handleRegister(request, env) {
     });
   }
   
-  if (users.has(username)) {
+  // 检查用户是否已存在
+  const existingUser = await getUser(env, username);
+  if (existingUser) {
     return new Response(JSON.stringify({ error: 'Username already exists. Please choose a different one.' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' }
@@ -402,12 +518,21 @@ async function handleRegister(request, env) {
   const userId = generateId();
   const passwordHash = await hashPassword(password);
   
-  users.set(username, {
+  const userData = {
     id: userId,
     username,
     password_hash: passwordHash,
     created_at: new Date().toISOString()
-  });
+  };
+  
+  // 存储到 KV
+  const success = await setUser(env, username, userData);
+  if (!success) {
+    return new Response(JSON.stringify({ error: 'Failed to create user' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
   
   const token = await createJWT({ userId, username }, env.JWT_SECRET || 'default-secret');
   
@@ -432,7 +557,7 @@ async function handleLogin(request, env) {
     });
   }
   
-  const user = users.get(username);
+  const user = await getUser(env, username);
   if (!user) {
     return new Response(JSON.stringify({ error: 'Invalid username. User not found.' }), {
       status: 401,
@@ -479,7 +604,7 @@ async function handleGetTotps(request, env) {
     });
   }
   
-  const userTotps = Array.from(totps.values()).filter(totp => totp.user_id === user.userId);
+  const userTotps = await getUserTotps(env, user.userId);
   
   return new Response(JSON.stringify(userTotps), {
     headers: { 'Content-Type': 'application/json' }
@@ -514,7 +639,17 @@ async function handleAddTotp(request, env) {
     created_at: new Date().toISOString()
   };
   
-  totps.set(id, totp);
+  // 存储 TOTP 数据
+  const totpSuccess = await setTotp(env, id, totp);
+  if (!totpSuccess) {
+    return new Response(JSON.stringify({ error: 'Failed to save TOTP' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  // 添加到用户的 TOTP 列表
+  await addUserTotp(env, user.userId, id);
   
   return new Response(JSON.stringify({
     message: 'TOTP added successfully',
@@ -540,9 +675,8 @@ async function handleGenerateToken(request, env, id) {
   }
   
   console.log('User authenticated:', user.userId);
-  console.log('Available TOTPs in memory:', Array.from(totps.keys()));
   
-  const totp = totps.get(id);
+  const totp = await getTotp(env, id);
   console.log('TOTP found:', !!totp);
   
   if (totp) {
@@ -586,7 +720,7 @@ async function handleDeleteTotp(request, env, id) {
     });
   }
   
-  const totp = totps.get(id);
+  const totp = await getTotp(env, id);
   if (!totp || totp.user_id !== user.userId) {
     return new Response(JSON.stringify({ error: 'TOTP not found' }), {
       status: 404,
@@ -594,7 +728,11 @@ async function handleDeleteTotp(request, env, id) {
     });
   }
   
-  totps.delete(id);
+  // 从 KV 中删除 TOTP
+  await deleteTotp(env, id);
+  
+  // 从用户的 TOTP 列表中移除
+  await removeUserTotp(env, user.userId, id);
   
   return new Response(JSON.stringify({ message: 'TOTP deleted successfully' }), {
     headers: { 'Content-Type': 'application/json' }
@@ -611,7 +749,7 @@ async function handleExportTotp(request, env, id) {
     });
   }
   
-  const totp = totps.get(id);
+  const totp = await getTotp(env, id);
   if (!totp || totp.user_id !== user.userId) {
     return new Response(JSON.stringify({ error: 'TOTP not found' }), {
       status: 404,
@@ -839,7 +977,10 @@ async function handleImportTotp(request, env) {
               created_at: new Date().toISOString()
             };
             
-            totps.set(id, totp);
+            // 存储到 KV
+            await setTotp(env, id, totp);
+            await addUserTotp(env, user.userId, id);
+            
             importedTotps.push({
               name: otp.name,
               issuer: otp.issuer
@@ -883,7 +1024,10 @@ async function handleImportTotp(request, env) {
         created_at: new Date().toISOString()
       };
       
-      totps.set(id, totp);
+      // 存储到 KV
+      await setTotp(env, id, totp);
+      await addUserTotp(env, user.userId, id);
+      
       importedTotps.push({
         name: label || issuer,
         issuer: issuer
@@ -924,19 +1068,20 @@ async function handleClearAllTotps(request, env) {
     });
   }
   
-  // 删除当前用户的所有TOTP
-  const userTotpIds = [];
-  for (const [id, totp] of totps.entries()) {
-    if (totp.user_id === user.userId) {
-      userTotpIds.push(id);
-    }
+  // 获取用户的所有 TOTP ID
+  const totpIds = await getKVData(env, `user_totps:${user.userId}`) || [];
+  
+  // 删除所有 TOTP 数据
+  for (const id of totpIds) {
+    await deleteTotp(env, id);
   }
   
-  userTotpIds.forEach(id => totps.delete(id));
+  // 清空用户的 TOTP 列表
+  await setKVData(env, `user_totps:${user.userId}`, []);
   
   return new Response(JSON.stringify({ 
     message: 'All TOTPs cleared successfully',
-    count: userTotpIds.length 
+    count: totpIds.length 
   }), {
     headers: { 'Content-Type': 'application/json' }
   });
@@ -959,9 +1104,8 @@ async function handleVerifyGithubToken(request, env) {
   }
   
   console.log('User authenticated:', user.userId);
-  const token = githubTokens.get(user.userId);
+  const token = await getGithubToken(env, user.userId);
   console.log('GitHub token found:', !!token);
-  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
   
   if (token) {
     console.log('Token preview:', token.substring(0, 8) + '...');
@@ -1091,6 +1235,7 @@ async function handleVerifyGithubToken(request, env) {
 }
 
 // 检查 GitHub 认证状态
+// 检查 GitHub 认证状态
 async function handleGithubAuthStatus(request, env) {
   console.log('=== Check GitHub Auth Status ===');
   const user = await getAuthenticatedUser(request, env);
@@ -1103,9 +1248,8 @@ async function handleGithubAuthStatus(request, env) {
   }
   
   console.log('User authenticated:', user.userId);
-  const token = githubTokens.get(user.userId);
+  const token = await getGithubToken(env, user.userId);
   console.log('GitHub token found:', !!token);
-  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
   
   if (token) {
     console.log('Token preview:', token.substring(0, 8) + '...');
@@ -1140,7 +1284,7 @@ async function handleGithubAuth(request, env) {
   }
   
   const state = generateId();
-  githubStates.set(state, user.userId);
+  await setGithubState(env, state, user.userId);
   
   // 修复：回调 URI 应该指向当前 API 域名，而不是前端域名
   const currentUrl = new URL(request.url);
@@ -1158,7 +1302,6 @@ async function handleGithubCallback(request, env) {
   const state = url.searchParams.get('state');
   
   console.log('Callback parameters:', { code: !!code, state });
-  console.log('Available states in memory:', Array.from(githubStates.keys()));
   
   if (!code || !state) {
     console.log('Missing code or state parameter');
@@ -1168,7 +1311,7 @@ async function handleGithubCallback(request, env) {
     });
   }
   
-  const userId = githubStates.get(state);
+  const userId = await getGithubState(env, state);
   console.log('User ID from state:', userId);
   
   if (!userId) {
@@ -1210,10 +1353,9 @@ async function handleGithubCallback(request, env) {
       });
       
       if (tokenData.access_token) {
-        githubTokens.set(actualUserId, tokenData.access_token);
+        await setGithubToken(env, actualUserId, tokenData.access_token);
         console.log('GitHub token stored for user:', actualUserId);
         console.log('Token preview:', tokenData.access_token.substring(0, 8) + '...');
-        console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
         
         // 重定向到前端
         const frontendUrl = env.FRONTEND_URL || 'https://2fa.wkk.su';
@@ -1230,7 +1372,7 @@ async function handleGithubCallback(request, env) {
   }
   
   // 原有逻辑（仅在有state的情况下使用）
-  githubStates.delete(state);
+  await deleteGithubState(env, state);
   
   try {
     // 获取 access token
@@ -1250,7 +1392,7 @@ async function handleGithubCallback(request, env) {
     const tokenData = await tokenResponse.json();
     
     if (tokenData.access_token) {
-      githubTokens.set(userId, tokenData.access_token);
+      await setGithubToken(env, userId, tokenData.access_token);
       
       // 重定向到前端
       const frontendUrl = env.FRONTEND_URL || 'https://2fa.wkk.su';

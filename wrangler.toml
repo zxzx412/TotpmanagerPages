@@ -1,16 +1,11 @@
 name = "totp-manager-pages"
 compatibility_date = "2024-01-01"
-compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "."
 
-# Cloudflare Pages 项目配置
-# 注意：Pages 项目不需要复杂的 wrangler.toml 配置
-# 大部分设置通过 Cloudflare Dashboard 完成
-
-# KV 命名空间 (用于数据存储)
 [[kv_namespaces]]
-binding = "KV_STORE"
-id = "your-kv-namespace-id"
+binding = "TOTP_KV"
 preview_id = "your-preview-kv-namespace-id"
+id = "your-production-kv-namespace-id"
 
 # 环境变量 (在 Dashboard 中设置，这里仅作参考)
 # 生产环境变量:
