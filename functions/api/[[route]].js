@@ -975,14 +975,19 @@ async function handleGithubCallback(request, env) {
       });
       
       const tokenData = await tokenResponse.json();
+      console.log('Token response status:', tokenResponse.status);
       console.log('Token response:', { 
         success: !!tokenData.access_token, 
-        error: tokenData.error 
+        error: tokenData.error,
+        token_type: tokenData.token_type,
+        scope: tokenData.scope
       });
       
       if (tokenData.access_token) {
         githubTokens.set(actualUserId, tokenData.access_token);
         console.log('GitHub token stored for user:', actualUserId);
+        console.log('Token preview:', tokenData.access_token.substring(0, 8) + '...');
+        console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
         
         // 重定向到前端
         const frontendUrl = env.FRONTEND_URL || 'https://2fa.wkk.su';
@@ -1036,16 +1041,23 @@ async function handleGithubCallback(request, env) {
 
 // 上传到 Gist
 async function handleUploadToGist(request, env) {
+  console.log('=== Upload to Gist Start ===');
   const user = await getAuthenticatedUser(request, env);
   if (!user) {
+    console.log('No authenticated user');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
     });
   }
   
+  console.log('User authenticated:', user.userId);
   const token = githubTokens.get(user.userId);
+  console.log('GitHub token found:', !!token);
+  console.log('Token preview:', token ? token.substring(0, 8) + '...' : 'null');
+  
   if (!token) {
+    console.log('No GitHub token found for user');
     return new Response(JSON.stringify({ error: 'GitHub authentication required' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }
@@ -1053,10 +1065,12 @@ async function handleUploadToGist(request, env) {
   }
   
   const { mode } = await request.json();
+  console.log('Upload mode:', mode);
   
   try {
     // 获取用户的所有 TOTP 数据
     const userTotps = Array.from(totps.values()).filter(totp => totp.user_id === user.userId);
+    console.log('User TOTPs count:', userTotps.length);
     
     const backupData = {
       totps: userTotps,
@@ -1074,18 +1088,27 @@ async function handleUploadToGist(request, env) {
       }
     };
     
+    console.log('Gist data prepared, sending to GitHub API...');
+    console.log('Gist description:', gistData.description);
+    console.log('File content length:', gistData.files['totp-backup.json'].content.length);
+    
     const response = await fetch('https://api.github.com/gists', {
       method: 'POST',
       headers: {
         'Authorization': `token ${token}`,
         'Accept': 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'User-Agent': 'TOTP-Manager/1.0'
       },
       body: JSON.stringify(gistData)
     });
     
+    console.log('GitHub API response status:', response.status);
+    console.log('GitHub API response headers:', Object.fromEntries(response.headers.entries()));
+    
     if (response.ok) {
       const result = await response.json();
+      console.log('Gist created successfully:', result.id);
       return new Response(JSON.stringify({ 
         success: true,
         gist_id: result.id,
@@ -1094,7 +1117,16 @@ async function handleUploadToGist(request, env) {
         headers: { 'Content-Type': 'application/json' }
       });
     } else {
-      throw new Error(`GitHub API error: ${response.status}`);
+      // 获取详细的错误信息
+      let errorDetails;
+      try {
+        errorDetails = await response.json();
+      } catch (e) {
+        errorDetails = await response.text();
+      }
+      
+      console.log('GitHub API error details:', errorDetails);
+      throw new Error(`GitHub API error: ${response.status} - ${JSON.stringify(errorDetails)}`);
     }
   } catch (error) {
     console.error('Upload to Gist error:', error);
