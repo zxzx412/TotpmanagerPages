@@ -345,13 +345,19 @@ async function getAuthenticatedUser(request, env) {
     const cookieHeader = request.headers.get('cookie');
     console.log('Cookie header:', cookieHeader);
     if (cookieHeader) {
-      const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
-        const [key, value] = cookie.trim().split('=');
-        acc[key] = decodeURIComponent(value); // URL解码Cookie值
-        return acc;
-      }, {});
+      const cookies = {};
+      // 正确解析Cookie，处理包含等号的值
+      cookieHeader.split(';').forEach(cookie => {
+        const parts = cookie.trim().split('=');
+        if (parts.length >= 2) {
+          const key = parts[0];
+          const value = parts.slice(1).join('='); // 重新连接等号分隔的部分
+          cookies[key] = decodeURIComponent(value);
+        }
+      });
       token = cookies.sessionToken;
       console.log('Token from Cookie (first 30 chars):', token ? token.substring(0, 30) + '...' : 'null');
+      console.log('Token from Cookie (last 30 chars):', token ? '...' + token.substring(token.length - 30) : 'null');
       console.log('All cookies found:', Object.keys(cookies));
     }
   }
