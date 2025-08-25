@@ -464,20 +464,38 @@ function App() {
 
             if (code) {
                 const response = await api.importTOTP(code.data);
-                console.log(response)
+                console.log('Import response:', response.data);
+                
                 if (response.data.success) {
-                    setImportStatus({loading: false, count: response.data.count});
-                    message.success(`成功导入 ${response.data.count} 个TOTP`);
-                    await loadTOTPs(); // 确保这里调用了 loadTOTPs 函数
+                    setImportStatus({loading: false, count: response.data.count, imported: response.data.imported});
+                    
+                    // 根据导入的数量显示不同的消息
+                    if (response.data.count === 1) {
+                        message.success(`成功导入 1 个TOTP`);
+                    } else if (response.data.count > 1) {
+                        // Google 验证器迁移格式通常会导入多个
+                        message.success(`成功导入 ${response.data.count} 个TOTP（Google 验证器迁移格式）`);
+                    }
+                    
+                    await loadTOTPs(); // 刷新列表
                 } else {
                     throw new Error(response.data.error || 'TOTP导入失败');
                 }
             } else {
-                throw new Error('无法识别二维码');
+                throw new Error('无法识别二维码，请确保二维码清晰且完整');
             }
         } catch (error) {
             console.error('QR上传错误:', error);
-            message.error(error.message || 'TOTP导入过程中发生错误');
+            let errorMessage = error.message || 'TOTP导入过程中发生错误';
+            
+            // 为常见错误提供友好的提示
+            if (error.message.includes('migration data')) {
+                errorMessage = 'Google 验证器迁移数据解析失败，请确保二维码来自 Google 验证器的导出功能';
+            } else if (error.message.includes('Unsupported QR code format')) {
+                errorMessage = '不支持的二维码格式，请使用 Google 验证器或标准 TOTP 二维码';
+            }
+            
+            message.error(errorMessage);
             setImportStatus({loading: false, count: 0});
         }
         return false;
@@ -619,6 +637,9 @@ function App() {
                                     <QrcodeOutlined/>
                                 </p>
                                 <p className="ant-upload-text">点击或拖拽二维码图片到此区域以导入 TOTP</p>
+                                <p className="ant-upload-hint">
+                                    支持：① Google 验证器迁移二维码（批量导入）② 标准 TOTP 二维码（单个导入）
+                                </p>
                             </Dragger>
                             {importStatus.loading && (
                                 <div style={{textAlign: 'center', marginTop: '10px'}}>

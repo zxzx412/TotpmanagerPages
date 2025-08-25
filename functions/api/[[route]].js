@@ -409,6 +409,177 @@ async function handleExportTotp(request, env, id) {
   });
 }
 
+// Google Authenticator 迁移格式解析
+function parseGoogleAuthMigration(migrationUri) {
+  try {
+    const url = new URL(migrationUri);
+    const data = url.searchParams.get('data');
+    
+    if (!data) {
+      throw new Error('Missing data parameter in migration URI');
+    }
+    
+    // Base64 解码
+    const decoded = atob(data.replace(/-/g, '+').replace(/_/g, '/'));
+    const bytes = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i++) {
+      bytes[i] = decoded.charCodeAt(i);
+    }
+    
+    // 简化的 Protocol Buffer 解析
+    // Google Authenticator 使用的格式通常包含多个 OtpParameters
+    const otpList = [];
+    let offset = 0;
+    
+    while (offset < bytes.length) {
+      const result = parseOtpParameter(bytes, offset);
+      if (result.otp) {
+        otpList.push(result.otp);
+      }
+      offset = result.nextOffset;
+      
+      // 防止无限循环
+      if (result.nextOffset <= offset) {
+        break;
+      }
+    }
+    
+    return otpList;
+  } catch (error) {
+    console.error('Error parsing Google Auth migration:', error);
+    throw new Error('Failed to parse Google Authenticator migration data');
+  }
+}
+
+// 解析单个 OTP 参数（简化版 Protocol Buffer 解析）
+function parseOtpParameter(bytes, startOffset) {
+  let offset = startOffset;
+  let secret = '';
+  let name = '';
+  let issuer = '';
+  let algorithm = 1; // SHA1
+  let digits = 6;
+  let type = 2; // TOTP
+  
+  try {
+    // 查找字段标识符和数据
+    while (offset < bytes.length) {
+      if (offset >= bytes.length - 1) break;
+      
+      const fieldNumber = bytes[offset] >> 3;
+      const wireType = bytes[offset] & 0x07;
+      offset++;
+      
+      if (wireType === 2) { // Length-delimited
+        const length = readVarint(bytes, offset);
+        offset = length.nextOffset;
+        
+        if (offset + length.value > bytes.length) break;
+        
+        const fieldData = bytes.slice(offset, offset + length.value);
+        
+        switch (fieldNumber) {
+          case 1: // secret
+            secret = base32Encode(fieldData);
+            break;
+          case 2: // name/label
+            name = new TextDecoder().decode(fieldData);
+            break;
+          case 3: // issuer
+            issuer = new TextDecoder().decode(fieldData);
+            break;
+        }
+        
+        offset += length.value;
+      } else {
+        // 跳过其他类型的字段
+        offset++;
+      }
+      
+      // 简单的结束条件：如果我们已经有了必要的数据
+      if (secret && name) {
+        break;
+      }
+    }
+    
+    const otp = secret && name ? {
+      secret: secret,
+      name: name,
+      issuer: issuer || 'Google Authenticator',
+      algorithm: algorithm,
+      digits: digits,
+      type: type
+    } : null;
+    
+    return {
+      otp: otp,
+      nextOffset: Math.min(offset + 10, bytes.length) // 简单的偏移增量
+    };
+  } catch (error) {
+    console.error('Error parsing OTP parameter:', error);
+    return {
+      otp: null,
+      nextOffset: Math.min(startOffset + 20, bytes.length)
+    };
+  }
+}
+
+// 读取 Protocol Buffer 的 varint
+function readVarint(bytes, offset) {
+  let value = 0;
+  let shift = 0;
+  let currentOffset = offset;
+  
+  while (currentOffset < bytes.length) {
+    const byte = bytes[currentOffset];
+    value |= (byte & 0x7F) << shift;
+    currentOffset++;
+    
+    if ((byte & 0x80) === 0) {
+      break;
+    }
+    
+    shift += 7;
+    if (shift >= 64) {
+      throw new Error('Varint too long');
+    }
+  }
+  
+  return {
+    value: value,
+    nextOffset: currentOffset
+  };
+}
+
+// Base32 编码（用于将二进制密钥转换为 Base32）
+function base32Encode(bytes) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let result = '';
+  let bits = 0;
+  let value = 0;
+  
+  for (let i = 0; i < bytes.length; i++) {
+    value = (value << 8) | bytes[i];
+    bits += 8;
+    
+    while (bits >= 5) {
+      result += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  
+  if (bits > 0) {
+    result += alphabet[(value << (5 - bits)) & 31];
+  }
+  
+  // 添加填充
+  while (result.length % 8 !== 0) {
+    result += '=';
+  }
+  
+  return result;
+}
+
 // 导入TOTP
 async function handleImportTotp(request, env) {
   const user = getAuthenticatedUser(request, env);
@@ -430,21 +601,52 @@ async function handleImportTotp(request, env) {
   
   try {
     let count = 0;
+    let importedTotps = [];
     
     // 检查是否为 Google Authenticator 迁移格式
     if (qrData.startsWith('otpauth-migration://')) {
-      // 简化处理迁移格式，实际项目中需要更复杂的解码
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: 'Migration format not supported in this simplified version' 
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      console.log('Processing Google Authenticator migration format');
+      
+      try {
+        const otpList = parseGoogleAuthMigration(qrData);
+        
+        for (const otp of otpList) {
+          if (otp.secret && otp.name) {
+            const id = generateId();
+            const totp = {
+              id,
+              user_id: user.userId,
+              user_info: otp.name,
+              secret: otp.secret,
+              created_at: new Date().toISOString()
+            };
+            
+            totps.set(id, totp);
+            importedTotps.push({
+              name: otp.name,
+              issuer: otp.issuer
+            });
+            count++;
+          }
+        }
+        
+        if (count === 0) {
+          throw new Error('No valid TOTP data found in migration format');
+        }
+        
+      } catch (error) {
+        console.error('Migration parsing error:', error);
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: `Failed to parse migration data: ${error.message}` 
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
     }
-    
     // 处理标准 TOTP URI
-    if (qrData.startsWith('otpauth://totp/')) {
+    else if (qrData.startsWith('otpauth://totp/')) {
       const url = new URL(qrData);
       const label = decodeURIComponent(url.pathname.substring(1)); // 移除开头的 '/'
       const secret = url.searchParams.get('secret');
@@ -464,15 +666,20 @@ async function handleImportTotp(request, env) {
       };
       
       totps.set(id, totp);
+      importedTotps.push({
+        name: label || issuer,
+        issuer: issuer
+      });
       count = 1;
     } else {
-      throw new Error('Invalid QR code format');
+      throw new Error('Unsupported QR code format. Please use Google Authenticator migration format or standard TOTP format.');
     }
     
     return new Response(JSON.stringify({ 
       success: true, 
       count,
-      message: `Successfully imported ${count} TOTP` 
+      imported: importedTotps,
+      message: `Successfully imported ${count} TOTP${count > 1 ? 's' : ''}` 
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
