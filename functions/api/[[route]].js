@@ -303,6 +303,11 @@ export async function onRequest(context) {
     if (url.pathname === '/api/github/delete-backup' && method === 'DELETE') {
       return setCORSHeaders(await handleDeleteBackup(request, env));
     }
+    
+    // GitHub token 验证路由
+    if (url.pathname === '/api/github/verify-token' && method === 'GET') {
+      return setCORSHeaders(await handleVerifyGithubToken(request, env));
+    }
 
     // 默认响应
     console.log('No route matched for:', method, url.pathname);
@@ -940,6 +945,150 @@ async function handleClearAllTotps(request, env) {
 // GitHub 相关功能存储（简化版，实际应使用 KV 或 D1）
 const githubTokens = new Map(); // 存储用户的 GitHub token
 const githubStates = new Map(); // 存储 OAuth state
+
+// 验证 GitHub Token 有效性
+async function handleVerifyGithubToken(request, env) {
+  console.log('=== Verify GitHub Token Start ===');
+  const user = await getAuthenticatedUser(request, env);
+  if (!user) {
+    console.log('No authenticated user');
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  console.log('User authenticated:', user.userId);
+  const token = githubTokens.get(user.userId);
+  console.log('GitHub token found:', !!token);
+  console.log('Available tokens in memory:', Array.from(githubTokens.keys()));
+  
+  if (token) {
+    console.log('Token preview:', token.substring(0, 8) + '...');
+    console.log('Token type:', typeof token);
+    console.log('Token length:', token.length);
+  }
+  
+  if (!token) {
+    console.log('No GitHub token found for user');
+    return new Response(JSON.stringify({ 
+      authenticated: false,
+      error: 'No GitHub token found'
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    console.log('Testing token validity with GitHub user API...');
+    // 使用 /user API 来验证 token 有效性
+    const response = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'TOTP-Manager/1.0'
+      }
+    });
+    
+    console.log('GitHub user API response status:', response.status);
+    console.log('GitHub user API response headers:', Object.fromEntries(response.headers.entries()));
+    
+    if (response.ok) {
+      const userData = await response.json();
+      console.log('GitHub user data retrieved:', {
+        login: userData.login,
+        id: userData.id,
+        name: userData.name
+      });
+      
+      // 验证 gist 权限
+      console.log('Testing gist permissions...');
+      const gistResponse = await fetch('https://api.github.com/gists', {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'TOTP-Manager/1.0'
+        }
+      });
+      
+      console.log('GitHub gist API response status:', gistResponse.status);
+      
+      if (gistResponse.ok) {
+        const gists = await gistResponse.json();
+        console.log('User gists count:', gists.length);
+        
+        return new Response(JSON.stringify({ 
+          authenticated: true,
+          valid: true,
+          user: {
+            login: userData.login,
+            name: userData.name
+          },
+          permissions: {
+            gist: true
+          },
+          gistCount: gists.length
+        }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } else {
+        // gist 权限错误
+        let gistError;
+        try {
+          gistError = await gistResponse.json();
+        } catch (e) {
+          gistError = await gistResponse.text();
+        }
+        
+        console.log('Gist permission error:', gistError);
+        
+        return new Response(JSON.stringify({ 
+          authenticated: true,
+          valid: true,
+          user: {
+            login: userData.login,
+            name: userData.name
+          },
+          permissions: {
+            gist: false
+          },
+          error: `Gist permission denied: ${gistResponse.status} - ${JSON.stringify(gistError)}`
+        }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    } else {
+      // token 无效
+      let errorDetails;
+      try {
+        errorDetails = await response.json();
+      } catch (e) {
+        errorDetails = await response.text();
+      }
+      
+      console.log('Token validation error:', errorDetails);
+      
+      return new Response(JSON.stringify({ 
+        authenticated: true,
+        valid: false,
+        error: `Token invalid: ${response.status} - ${JSON.stringify(errorDetails)}`
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  } catch (error) {
+    console.error('Token verification error:', error);
+    return new Response(JSON.stringify({ 
+      authenticated: true,
+      valid: false,
+      error: error.message 
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
 
 // 检查 GitHub 认证状态
 async function handleGithubAuthStatus(request, env) {
