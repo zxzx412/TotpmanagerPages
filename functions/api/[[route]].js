@@ -227,12 +227,31 @@ export async function onRequest(context) {
 
 // 获取认证用户
 function getAuthenticatedUser(request, env) {
+  let token = null;
+  
+  // 从 Authorization header 获取 token
   const authHeader = request.headers.get('authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
+  }
+  
+  // 如果 header 中没有，尝试从 Cookie 中获取
+  if (!token) {
+    const cookieHeader = request.headers.get('cookie');
+    if (cookieHeader) {
+      const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=');
+        acc[key] = value;
+        return acc;
+      }, {});
+      token = cookies.sessionToken;
+    }
+  }
+  
+  if (!token) {
     return null;
   }
   
-  const token = authHeader.slice(7);
   return verifyJWT(token, env.JWT_SECRET || 'default-secret');
 }
 
@@ -816,7 +835,9 @@ async function handleGithubAuth(request, env) {
   const state = generateId();
   githubStates.set(state, user.userId);
   
-  const redirectUri = `${env.FRONTEND_URL || 'http://localhost:3000'}/api/github/callback`;
+  // 修复：回调 URI 应该指向当前 API 域名，而不是前端域名
+  const currentUrl = new URL(request.url);
+  const redirectUri = `${currentUrl.origin}/api/github/callback`;
   const authUrl = `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&scope=gist&state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`;
   
   return Response.redirect(authUrl, 302);
