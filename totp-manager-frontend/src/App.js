@@ -284,7 +284,8 @@ function App() {
         } finally {
             setIsLoadingTOTPs(false);
         }
-    }, [isLoggedIn, generateToken]);
+    }, [isLoggedIn, generateToken]); // 添加generateToken依赖项
+
     useEffect(() => {
         const token = Cookies.get('sessionToken');
         if (token) {
@@ -310,7 +311,19 @@ function App() {
         
         // 不再设置重复的定时器来生成令牌
         // TOTP应该基于时间计算，而不是依赖定时器
-    }, [isLoggedIn, totps, generateToken]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // 保持空依赖数组，只在组件挂载时执行，避免无限循环
+    
+    // 当totps变化时生成令牌
+    useEffect(() => {
+        if (!isLoggedIn || totps.length === 0) return;
+        
+        console.log('TOTP列表更新，生成令牌');
+        totps.forEach(totp => {
+            generateToken(totp.id);
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [totps, isLoggedIn]); // 仅当totps或登录状态变化时执行，避免generateToken导致的无限循环
 
     const addTOTP = useCallback(async () => {
         if (!userInfo || !secret) {
