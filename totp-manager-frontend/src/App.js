@@ -46,28 +46,34 @@ const {Dragger} = Upload;
 const {Text} = Typography;
 
 const CountdownTimer = React.memo(({onComplete}) => {
-    const [countdown, setCountdown] = useState(30);
+    const [currentSecond, setCurrentSecond] = useState(0);
 
     useEffect(() => {
-        const calculateCountdown = () => {
+        const calculateCurrentSecond = () => {
             const now = Math.floor(Date.now() / 1000);
-            return 30 - (now % 30);
+            return now % 30;
         };
 
-        const timer = setInterval(() => {
-            const newCountdown = calculateCountdown();
-            setCountdown(newCountdown);
-            if (newCountdown === 30) {
+        setCurrentSecond(calculateCurrentSecond());
+        
+        const interval = setInterval(() => {
+            const newSecond = calculateCurrentSecond();
+            setCurrentSecond(newSecond);
+            
+            // 当进入新周期时触发回调
+            if (newSecond === 0) {
                 onComplete();
             }
         }, 1000);
 
-        return () => clearInterval(timer);
+        return () => clearInterval(interval);
     }, [onComplete]);
 
     const radius = 15;
     const circumference = 2 * Math.PI * radius;
-    const dashoffset = circumference * (1 - countdown / 30);
+    // 倒计时应该是30秒减去当前秒数
+    const countdown = 30 - currentSecond;
+    const dashoffset = circumference * (1 - currentSecond / 30);
 
     return (
         <svg width="40" height="40" viewBox="0 0 40 40">
@@ -292,36 +298,18 @@ function App() {
     useEffect(() => {
         if (!isLoggedIn || totps.length === 0) return;
 
-        let interval;
-        let timeout;
-
-        const generateAllTokens = () => {
-            console.log('定时生成所有令牌');
+        // 只在组件挂载时生成一次令牌
+        const generateInitialTokens = () => {
+            console.log('初始生成所有令牌');
             totps.forEach(totp => {
                 generateToken(totp.id);
             });
         };
 
-        const now = Math.floor(Date.now() / 1000);
-        const delay = ((30 - (now % 30)) * 1000) + 100; // 加100毫秒确保在新周期开始后生成令牌
-
-        console.log(`设置定时器，${delay}ms后开始自动刷新`);
+        generateInitialTokens();
         
-        timeout = setTimeout(() => {
-            generateAllTokens();
-            interval = setInterval(generateAllTokens, 30000);
-        }, delay);
-
-        // 返回清理函数
-        return () => {
-            console.log('清理定时器');
-            if (timeout) {
-                clearTimeout(timeout);
-            }
-            if (interval) {
-                clearInterval(interval);
-            }
-        };
+        // 不再设置重复的定时器来生成令牌
+        // TOTP应该基于时间计算，而不是依赖定时器
     }, [isLoggedIn, totps, generateToken]);
 
     const addTOTP = useCallback(async () => {
