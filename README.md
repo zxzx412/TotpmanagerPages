@@ -75,6 +75,15 @@ Root directory: (留空)
 ```
 
 #### 4. 创建 KV 命名空间
+
+**方法1：使用 wrangler CLI（推荐）**
+```bash
+# 确保您已登录到 Cloudflare
+npx wrangler kv namespace create "TOTP_KV"
+npx wrangler kv namespace create "TOTP_KV_PREVIEW"
+```
+
+**方法2：使用 Cloudflare Dashboard**
 1. 在 Cloudflare Dashboard 中进入 **Workers & Pages**
 2. 点击 **KV**
 3. 创建新的 KV 命名空间，命名为：`totp-manager-kv`
@@ -305,6 +314,12 @@ GET    /api/github/verify-token     # 验证令牌
 - 检查 KV 命名空间是否正确创建
 - 确认 Pages 项目中的 KV 绑定设置
 - 验证 Variable name 设置为 `TOTP_KV`
+
+**错误**: "Invalid KV namespace ID. Not a valid hex string"
+**解决方案**:
+- 检查 `wrangler.toml` 中的 KV namespace ID 是否为占位符
+- 使用 `npx wrangler kv namespace create "TOTP_KV"` 创建真实的 KV 命名空间
+- 将生成的 ID 更新到 `wrangler.toml` 文件中
 
 #### 2. GitHub 同步问题
 **错误**: GitHub API 403 错误
