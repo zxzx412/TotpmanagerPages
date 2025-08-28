@@ -1,16 +1,15 @@
 # 🔧 Cloudflare Pages 环境变量配置指南
 
-## ✅ 必需环境变量
+## ⭐ 推荐方式：使用 Dashboard 面板配置
 
-在 Cloudflare Pages Dashboard 的 **Settings** → **Environment variables** 中添加以下变量：
+我们**强烈建议**使用 Cloudflare Pages Dashboard 进行所有配置，而不是 `wrangler.toml` 文件。
 
-### 基础配置
-```
-NODE_VERSION = 18
-JWT_SECRET = your-super-secret-jwt-key-change-this-to-a-random-64-character-string
-```
-
-> ⚠️ **重要**: `JWT_SECRET` 必须是一个强随机字符串，建议使用 64 位字符。你可以使用在线随机字符串生成器生成。
+### 🎯 为什么使用 Dashboard？
+- ✅ **避免配置冲突**：Dashboard 设置优先级更高
+- ✅ **便于管理**：可视化界面，操作简单
+- ✅ **安全性更好**：敏感信息不会提交到代码仓库
+- ✅ **团队协作**：多人可以在 Dashboard 中管理配置
+- ✅ **实时生效**：无需重新部署代码
 
 ## 🔗 KV 命名空间绑定
 
