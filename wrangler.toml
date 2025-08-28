@@ -4,8 +4,8 @@ pages_build_output_dir = "."
 
 [[kv_namespaces]]
 binding = "TOTP_KV"
-preview_id = "your-preview-kv-namespace-id"
-id = "your-production-kv-namespace-id"
+preview_id = "2228db4ebc0d42ae94f27afaf18d865d"
+id = "70cf8c706e374c98b991c309767c756d"
 
 # 环境变量 (在 Dashboard 中设置，这里仅作参考)
 # 生产环境变量:
