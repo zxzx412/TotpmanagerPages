@@ -330,6 +330,26 @@ export async function onRequest(context) {
   }
 
   try {
+    // 健康检查端点
+    if (url.pathname === '/api/health' && method === 'GET') {
+      const kvStatus = env.TOTP_KV ? 'connected' : 'not configured';
+      const jwtSecret = env.JWT_SECRET ? 'configured' : 'missing';
+      
+      return setCORSHeaders(new Response(JSON.stringify({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        kv: kvStatus,
+        jwt: jwtSecret,
+        environment: {
+          nodeVersion: env.NODE_VERSION || 'not set',
+          githubClientId: env.GITHUB_CLIENT_ID ? 'configured' : 'not set'
+        }
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      }));
+    }
+    
     // 路由处理
     if (url.pathname === '/api/register' && method === 'POST') {
       return setCORSHeaders(await handleRegister(request, env));

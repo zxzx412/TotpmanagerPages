@@ -7,13 +7,20 @@ binding = "TOTP_KV"
 preview_id = "2228db4ebc0d42ae94f27afaf18d865d"
 id = "70cf8c706e374c98b991c309767c756d"
 
-# 环境变量 (在 Dashboard 中设置，这里仅作参考)
-# 生产环境变量:
+# 环境变量 (在 Cloudflare Pages Dashboard 中设置)
+# 必需变量 - 在 Settings > Environment variables 中添加:
 # NODE_VERSION = "18"
-# JWT_SECRET = "your-super-secret-jwt-key-here"
+# JWT_SECRET = "your-super-secret-jwt-key-here-change-this-to-random-string"
+#
+# 可选变量 (GitHub 同步功能):
 # GITHUB_CLIENT_ID = "your-github-client-id"
 # GITHUB_CLIENT_SECRET = "your-github-client-secret"
 # GITHUB_REDIRECT_URI = "https://your-pages-domain.pages.dev/api/github/callback"
 # FRONTEND_URL = "https://your-pages-domain.pages.dev"
 # REACT_APP_API_BASE_URL = "https://your-pages-domain.pages.dev"
 # REACT_APP_GITHUB_AUTH_URL = "https://your-pages-domain.pages.dev/api/github/auth"
+#
+# KV 绑定配置:
+# 在 Settings > Functions > KV namespace bindings 中添加:
+# Variable name: TOTP_KV
+# KV namespace: 选择下面配置的 KV 命名空间
