@@ -600,8 +600,8 @@ function App() {
         },
         {
             title: '用户信息',
-            dataIndex: 'userInfo',
-            key: 'userInfo',
+            dataIndex: 'user_info',
+            key: 'user_info',
             ellipsis: true,
         },
         {
