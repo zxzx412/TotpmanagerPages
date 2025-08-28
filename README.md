@@ -121,23 +121,70 @@ NODE_VERSION=18
 JWT_SECRET=your-super-secret-jwt-key-here
 ```
 
-**可选变量（GitHub 同步功能）：**
+**GitHub 同步功能变量（可选）：**
 ```env
-GITHUB_CLIENT_ID=your-github-client-id
-GITHUB_CLIENT_SECRET=your-github-client-secret
+GITHUB_CLIENT_ID=your-github-oauth-app-client-id
+GITHUB_CLIENT_SECRET=your-github-oauth-app-client-secret
 FRONTEND_URL=https://your-pages-domain.pages.dev
 ```
+
+**前端应用配置变量（可选）：**
+```env
+REACT_APP_API_BASE_URL=https://your-pages-domain.pages.dev
+REACT_APP_GITHUB_AUTH_URL=https://your-pages-domain.pages.dev/api/github/auth
+```
+
+### 📋 环境变量详细说明
+
+| 变量名 | 类型 | 说明 | 示例值 |
+|--------|------|------|--------|
+| `NODE_VERSION` | 必需 | Node.js 运行时版本 | `18` |
+| `JWT_SECRET` | 必需 | JWT 令牌签名密钥（建议64位随机字符串） | `your-super-secret-jwt-key-here` |
+| `GITHUB_CLIENT_ID` | 可选 | GitHub OAuth App 客户端ID | `Ov23liabcdefghij` |
+| `GITHUB_CLIENT_SECRET` | 可选 | GitHub OAuth App 客户端密钥 | `1234567890abcdefghij1234567890abcdefgh` |
+| `FRONTEND_URL` | 可选 | 前端应用完整URL（用于OAuth回调） | `https://your-pages-domain.pages.dev` |
+| `REACT_APP_API_BASE_URL` | 可选 | 前端API基础URL | `https://your-pages-domain.pages.dev` |
+| `REACT_APP_GITHUB_AUTH_URL` | 可选 | 前端GitHub认证URL | `https://your-pages-domain.pages.dev/api/github/auth` |
+
+> ⚠️ **安全提示**：
+> - `JWT_SECRET` 必须是强随机字符串，建议使用64位字符
+> - `GITHUB_CLIENT_SECRET` 是敏感信息，切勿泄露
+> - 所有URL应使用HTTPS协议
 
 #### 7. GitHub OAuth 配置（可选）
 如需使用 GitHub 同步功能：
 
+**步骤1：创建 GitHub OAuth App**
 1. 访问 [GitHub Developer Settings](https://github.com/settings/developers)
-2. 创建新的 **OAuth App**
+2. 点击 **New OAuth App**
 3. 配置参数：
-   - **Application name**: TOTP Token Manager
+   - **Application name**: `TOTP Token Manager`
    - **Homepage URL**: `https://your-pages-domain.pages.dev`
    - **Authorization callback URL**: `https://your-pages-domain.pages.dev/api/github/callback`
-4. 复制 **Client ID** 和 **Client Secret** 到环境变量
+   - **Application description**: `TOTP Token Manager with GitHub Sync`
+
+**步骤2：获取凭据**
+创建后获取以下信息：
+- **Client ID**: 形如 `Ov23liabcdefghij`
+- **Client Secret**: 形如 `1234567890abcdefghij1234567890abcdefgh`
+
+**步骤3：配置环境变量**
+在 Cloudflare Pages Dashboard 中添加以下环境变量：
+```env
+# GitHub OAuth 配置
+GITHUB_CLIENT_ID=你的Client_ID
+GITHUB_CLIENT_SECRET=你的Client_Secret
+FRONTEND_URL=https://your-pages-domain.pages.dev
+
+# 前端应用配置
+REACT_APP_API_BASE_URL=https://your-pages-domain.pages.dev
+REACT_APP_GITHUB_AUTH_URL=https://your-pages-domain.pages.dev/api/github/auth
+```
+
+**步骤4：验证配置**
+- 确保 OAuth App 权限包含 `gist` 权限
+- 回调URL 必须与 `FRONTEND_URL` 一致
+- 所有URL都使用HTTPS协议
 
 #### 8. 部署完成！
 - 访问您的 Pages 域名
@@ -355,7 +402,21 @@ https://6578eeea.totp-manager-pages.pages.dev/api/health
 
 ### 常见问题
 
-#### 1. KV 相关错误
+#### 1. 环境变量配置错误
+**错误**: “JWT_SECRET is undefined” 或 “Internal server error”
+**解决方案**:
+- 检查 **Settings** > **Environment variables** 中是否设置了 `JWT_SECRET`
+- 确保 `NODE_VERSION` 设置为 `18`
+- 验证环境变量名称拼写正确（区分大小写）
+- 保存环境变量后重新部署应用
+
+**错误**: “CORS error” 或跨域问题
+**解决方案**:
+- 检查 `FRONTEND_URL` 是否与实际域名一致
+- 确保 `REACT_APP_API_BASE_URL` 指向正确的API域名
+- 验证所有URL使用HTTPS协议
+
+#### 2. KV 相关错误
 **错误**: "TOTP_KV is not defined"
 **解决方案**:
 - 检查 KV 命名空间是否正确创建
@@ -368,7 +429,21 @@ https://6578eeea.totp-manager-pages.pages.dev/api/health
 - 确认在 **Settings** > **Functions** > **KV namespace bindings** 中正确设置
 - 验证 Variable name 为 `TOTP_KV`，选择正确的 KV 命名空间
 
-#### 2. GitHub 同步问题
+#### 3. GitHub 同步问题
+**错误**: GitHub API 403 错误
+**解决方案**:
+- 检查 `GITHUB_CLIENT_ID` 和 `GITHUB_CLIENT_SECRET` 是否正确配置
+- 确认 GitHub OAuth App 的回调URL设置正确
+- 验证 OAuth App 包含 `gist` 权限
+- 检查 `FRONTEND_URL` 与 OAuth App 配置是否一致
+
+**错误**: GitHub 认证失败
+**解决方案**:
+- 检查所有 GitHub 相关环境变量是否已设置
+- 确保 `REACT_APP_GITHUB_AUTH_URL` 指向正确的认证端点
+- 验证前端和后端域名一致性
+
+#### 4. 部署问题
 **错误**: GitHub API 403 错误
 **解决方案**:
 - 检查 GitHub OAuth App 配置
@@ -382,8 +457,9 @@ https://6578eeea.totp-manager-pages.pages.dev/api/health
 - 检查 Node.js 版本设置（推荐 18）
 - 确认构建命令和输出目录设置
 - 查看 Functions 构建日志
+- 验证所有必需环境变量是否已配置
 
-#### 4. TOTP 生成问题
+#### 5. TOTP 生成问题
 **错误**: 生成的令牌与其他应用不一致
 **解决方案**:
 - 确认密钥格式为标准 Base32
