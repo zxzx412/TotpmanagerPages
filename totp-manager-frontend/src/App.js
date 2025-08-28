@@ -292,6 +292,9 @@ function App() {
     useEffect(() => {
         if (!isLoggedIn || totps.length === 0) return;
 
+        let interval;
+        let timeout;
+
         const generateAllTokens = () => {
             console.log('定时生成所有令牌');
             totps.forEach(totp => {
@@ -304,20 +307,20 @@ function App() {
 
         console.log(`设置定时器，${delay}ms后开始自动刷新`);
         
-        const timeout = setTimeout(() => {
+        timeout = setTimeout(() => {
             generateAllTokens();
-            const interval = setInterval(generateAllTokens, 30000);
-            
-            // 返回清理函数
-            return () => {
-                console.log('清理定时器');
-                clearInterval(interval);
-            };
+            interval = setInterval(generateAllTokens, 30000);
         }, delay);
 
+        // 返回清理函数
         return () => {
-            console.log('清理初始定时器');
-            clearTimeout(timeout);
+            console.log('清理定时器');
+            if (timeout) {
+                clearTimeout(timeout);
+            }
+            if (interval) {
+                clearInterval(interval);
+            }
         };
     }, [isLoggedIn, totps, generateToken]);
 
