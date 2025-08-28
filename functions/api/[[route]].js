@@ -442,6 +442,11 @@ export async function onRequest(context) {
     if (url.pathname === '/api/github/verify-token' && method === 'GET') {
       return setCORSHeaders(await handleVerifyGithubToken(request, env));
     }
+    
+    // 测试迁移数据解析（开发用）
+    if (url.pathname === '/api/test-migration' && method === 'POST') {
+      return setCORSHeaders(await handleTestMigrationData(request, env));
+    }
 
     // 默认响应
     console.log('No route matched for:', method, url.pathname);
@@ -730,6 +735,58 @@ async function handleGenerateToken(request, env, id) {
   }
 }
 
+// 测试Google Authenticator迁移数据解析
+async function handleTestMigrationData(request, env) {
+  try {
+    const { data } = await request.json();
+    
+    if (!data) {
+      return new Response(JSON.stringify({ error: 'Missing data parameter' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    console.log('Testing migration data:', data);
+    
+    // 构建完整的URI
+    const fullUri = data.startsWith('otpauth-migration://') ? data : `otpauth-migration://offline?data=${data}`;
+    
+    try {
+      const result = parseGoogleAuthMigration(fullUri);
+      return new Response(JSON.stringify({
+        success: true,
+        dataLength: data.length,
+        parsedEntries: result.length,
+        entries: result
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: error.message,
+        dataLength: data.length,
+        debugging: {
+          isValidBase64: /^[A-Za-z0-9+/]*={0,2}$/.test(data.replace(/-/g, '+').replace(/_/g, '/')),
+          hasCorrectPrefix: data.startsWith('otpauth-migration://') || fullUri.startsWith('otpauth-migration://')
+        }
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+  }
+}
+
 // 删除TOTP
 async function handleDeleteTotp(request, env, id) {
   const user = await getAuthenticatedUser(request, env);
@@ -788,6 +845,7 @@ async function handleExportTotp(request, env, id) {
 // Google Authenticator 迁移格式解析
 function parseGoogleAuthMigration(migrationUri) {
   try {
+    console.log('Parsing migration URI:', migrationUri);
     const url = new URL(migrationUri);
     const data = url.searchParams.get('data');
     
@@ -795,39 +853,75 @@ function parseGoogleAuthMigration(migrationUri) {
       throw new Error('Missing data parameter in migration URI');
     }
     
-    // Base64 解码
-    const decoded = atob(data.replace(/-/g, '+').replace(/_/g, '/'));
-    const bytes = new Uint8Array(decoded.length);
-    for (let i = 0; i < decoded.length; i++) {
-      bytes[i] = decoded.charCodeAt(i);
+    console.log('Raw data parameter:', data);
+    console.log('Data length:', data.length);
+    
+    // 检查数据长度
+    if (data.length < 10) {
+      throw new Error('Migration data appears to be incomplete or truncated. Please ensure the QR code is complete and clear.');
     }
     
-    // 简化的 Protocol Buffer 解析
-    // Google Authenticator 使用的格式通常包含多个 OtpParameters
+    // Base64 解码 - 支持 URL-safe Base64
+    let decodedData;
+    try {
+      // 添加必要的填充
+      let paddedData = data.replace(/-/g, '+').replace(/_/g, '/');
+      while (paddedData.length % 4) {
+        paddedData += '=';
+      }
+      decodedData = atob(paddedData);
+    } catch (base64Error) {
+      console.error('Base64 decode error:', base64Error);
+      throw new Error('Invalid Base64 data in migration URI');
+    }
+    
+    const bytes = new Uint8Array(decodedData.length);
+    for (let i = 0; i < decodedData.length; i++) {
+      bytes[i] = decodedData.charCodeAt(i);
+    }
+    
+    console.log('Decoded bytes length:', bytes.length);
+    console.log('First 20 bytes:', Array.from(bytes.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+    
+    // Protocol Buffer 解析
     const otpList = [];
     let offset = 0;
+    let attempts = 0;
+    const maxAttempts = 10; // 防止无限循环
     
-    while (offset < bytes.length) {
+    while (offset < bytes.length && attempts < maxAttempts) {
+      console.log(`Parsing attempt ${attempts + 1}, offset: ${offset}`);
       const result = parseOtpParameter(bytes, offset);
+      
       if (result.otp) {
+        console.log('Successfully parsed OTP:', result.otp.name);
         otpList.push(result.otp);
       }
-      offset = result.nextOffset;
       
-      // 防止无限循环
+      // 更新偏移量
       if (result.nextOffset <= offset) {
+        console.log('No progress made, breaking loop');
         break;
       }
+      
+      offset = result.nextOffset;
+      attempts++;
+    }
+    
+    console.log(`Parsing completed. Found ${otpList.length} OTP entries`);
+    
+    if (otpList.length === 0) {
+      throw new Error('No valid OTP data found in migration format. The QR code may be damaged or from an unsupported version.');
     }
     
     return otpList;
   } catch (error) {
     console.error('Error parsing Google Auth migration:', error);
-    throw new Error('Failed to parse Google Authenticator migration data');
+    throw new Error(`Failed to parse Google Authenticator migration data: ${error.message}`);
   }
 }
 
-// 解析单个 OTP 参数（简化版 Protocol Buffer 解析）
+// 解析单个 OTP 参数（改进版 Protocol Buffer 解析）
 function parseOtpParameter(bytes, startOffset) {
   let offset = startOffset;
   let secret = '';
@@ -837,65 +931,134 @@ function parseOtpParameter(bytes, startOffset) {
   let digits = 6;
   let type = 2; // TOTP
   
+  console.log(`Starting OTP parameter parsing at offset ${startOffset}`);
+  
   try {
-    // 查找字段标识符和数据
-    while (offset < bytes.length) {
-      if (offset >= bytes.length - 1) break;
-      
-      const fieldNumber = bytes[offset] >> 3;
-      const wireType = bytes[offset] & 0x07;
-      offset++;
-      
-      if (wireType === 2) { // Length-delimited
-        const length = readVarint(bytes, offset);
-        offset = length.nextOffset;
-        
-        if (offset + length.value > bytes.length) break;
-        
-        const fieldData = bytes.slice(offset, offset + length.value);
-        
-        switch (fieldNumber) {
-          case 1: // secret
-            secret = base32Encode(fieldData);
-            break;
-          case 2: // name/label
-            name = new TextDecoder().decode(fieldData);
-            break;
-          case 3: // issuer
-            issuer = new TextDecoder().decode(fieldData);
-            break;
-        }
-        
-        offset += length.value;
-      } else {
-        // 跳过其他类型的字段
-        offset++;
-      }
-      
-      // 简单的结束条件：如果我们已经有了必要的数据
-      if (secret && name) {
-        break;
-      }
+    // 首先尝试读取外层结构
+    if (offset >= bytes.length) {
+      console.log('Reached end of bytes');
+      return { otp: null, nextOffset: bytes.length };
     }
     
-    const otp = secret && name ? {
-      secret: secret,
-      name: name,
-      issuer: issuer || 'Google Authenticator',
-      algorithm: algorithm,
-      digits: digits,
-      type: type
-    } : null;
+    // 检查是否是字段标识符
+    let fieldTag = bytes[offset];
+    let fieldNumber = fieldTag >> 3;
+    let wireType = fieldTag & 0x07;
     
-    return {
-      otp: otp,
-      nextOffset: Math.min(offset + 10, bytes.length) // 简单的偏移增量
-    };
+    console.log(`Field tag: 0x${fieldTag.toString(16)}, field number: ${fieldNumber}, wire type: ${wireType}`);
+    
+    if (wireType === 2) { // Length-delimited (嵌套消息)
+      offset++;
+      
+      // 读取长度
+      const lengthResult = readVarint(bytes, offset);
+      offset = lengthResult.nextOffset;
+      const messageLength = lengthResult.value;
+      
+      console.log(`Message length: ${messageLength}`);
+      
+      if (offset + messageLength > bytes.length) {
+        console.log('Message length exceeds available bytes');
+        return { otp: null, nextOffset: bytes.length };
+      }
+      
+      // 解析嵌套消息内容
+      const messageEnd = offset + messageLength;
+      while (offset < messageEnd) {
+        if (offset >= bytes.length) break;
+        
+        const subFieldTag = bytes[offset];
+        const subFieldNumber = subFieldTag >> 3;
+        const subWireType = subFieldTag & 0x07;
+        offset++;
+        
+        console.log(`Sub-field: ${subFieldNumber}, wire type: ${subWireType}`);
+        
+        if (subWireType === 2) { // Length-delimited string
+          const subLengthResult = readVarint(bytes, offset);
+          offset = subLengthResult.nextOffset;
+          const subLength = subLengthResult.value;
+          
+          if (offset + subLength > bytes.length) {
+            console.log(`Sub-field length ${subLength} exceeds available bytes`);
+            break;
+          }
+          
+          const fieldData = bytes.slice(offset, offset + subLength);
+          
+          switch (subFieldNumber) {
+            case 1: // secret (binary)
+              secret = base32Encode(fieldData);
+              console.log(`Found secret (length: ${fieldData.length})`);
+              break;
+            case 2: // name/label
+              name = new TextDecoder('utf-8').decode(fieldData);
+              console.log(`Found name: ${name}`);
+              break;
+            case 3: // issuer
+              issuer = new TextDecoder('utf-8').decode(fieldData);
+              console.log(`Found issuer: ${issuer}`);
+              break;
+            default:
+              console.log(`Unknown sub-field ${subFieldNumber}, skipping`);
+              break;
+          }
+          
+          offset += subLength;
+        } else if (subWireType === 0) { // Varint
+          const varintResult = readVarint(bytes, offset);
+          offset = varintResult.nextOffset;
+          
+          switch (subFieldNumber) {
+            case 4: // algorithm
+              algorithm = varintResult.value;
+              console.log(`Found algorithm: ${algorithm}`);
+              break;
+            case 5: // digits
+              digits = varintResult.value;
+              console.log(`Found digits: ${digits}`);
+              break;
+            case 6: // type
+              type = varintResult.value;
+              console.log(`Found type: ${type}`);
+              break;
+          }
+        } else {
+          // 跳过未知的wire type
+          console.log(`Skipping unknown wire type ${subWireType}`);
+          offset++;
+        }
+      }
+      
+      // 构建OTP对象
+      const otp = secret && name ? {
+        secret: secret,
+        name: name.trim(), // 去除首尾空白
+        issuer: issuer ? issuer.trim() : 'Google Authenticator',
+        algorithm: algorithm,
+        digits: digits === 1 ? 6 : digits, // 修复默认digits值
+        type: type
+      } : null;
+      
+      console.log('OTP parsing result:', otp ? 'SUCCESS' : 'FAILED');
+      
+      return {
+        otp: otp,
+        nextOffset: messageEnd
+      };
+    } else {
+      // 不是预期的wire type，跳过
+      console.log(`Unexpected wire type ${wireType}, skipping`);
+      return {
+        otp: null,
+        nextOffset: Math.min(startOffset + 1, bytes.length)
+      };
+    }
   } catch (error) {
     console.error('Error parsing OTP parameter:', error);
     return {
       otp: null,
-      nextOffset: Math.min(startOffset + 20, bytes.length)
+      nextOffset: Math.min(startOffset + 10, bytes.length)
     };
   }
 }
@@ -916,7 +1079,7 @@ function readVarint(bytes, offset) {
     }
     
     shift += 7;
-    if (shift >= 64) {
+    if (shift >= 64 || currentOffset - offset > 10) {
       throw new Error('Varint too long');
     }
   }
@@ -982,9 +1145,11 @@ async function handleImportTotp(request, env) {
     // 检查是否为 Google Authenticator 迁移格式
     if (qrData.startsWith('otpauth-migration://')) {
       console.log('Processing Google Authenticator migration format');
+      console.log('Migration URI length:', qrData.length);
       
       try {
         const otpList = parseGoogleAuthMigration(qrData);
+        console.log(`Parsed ${otpList.length} OTP entries`);
         
         for (const otp of otpList) {
           if (otp.secret && otp.name) {
@@ -1010,14 +1175,31 @@ async function handleImportTotp(request, env) {
         }
         
         if (count === 0) {
-          throw new Error('No valid TOTP data found in migration format');
+          throw new Error('No valid TOTP data found in migration format. Please ensure: 1) The QR code is complete and clear, 2) The image quality is good, 3) The QR code is from Google Authenticator export function.');
         }
         
       } catch (error) {
         console.error('Migration parsing error:', error);
+        
+        // 提供更具体的错误信息
+        let detailedError = error.message;
+        if (error.message.includes('incomplete or truncated')) {
+          detailedError = '二维码数据不完整。请确保：1) 二维码图片完整清晰；2) 没有被截断或遮挡；3) 图片质量足够高。';
+        } else if (error.message.includes('Invalid Base64')) {
+          detailedError = '二维码数据格式错误。请确保使用 Google Authenticator 的“转移账户”功能生成的二维码。';
+        } else if (error.message.includes('No valid OTP data')) {
+          detailedError = '未找到有效的 TOTP 数据。可能原因：1) 二维码损坏；2) Google Authenticator 版本不兼容；3) 二维码不是迁移格式。';
+        }
+        
         return new Response(JSON.stringify({ 
           success: false, 
-          error: `Failed to parse migration data: ${error.message}` 
+          error: `Google 验证器迁移数据解析失败: ${detailedError}`,
+          troubleshooting: [
+            '请确保二维码图片完整清晰',
+            '确认是使用 Google Authenticator 的“转移账户”功能',
+            '尝试重新截取二维码图片',
+            '检查图片质量和光线条件'
+          ]
         }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }

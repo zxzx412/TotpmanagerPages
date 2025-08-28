@@ -284,6 +284,8 @@ npx wrangler pages dev
    - 支持批量导入多个账户
    - 从 Google Authenticator "转移账户" 功能导出
    - Protocol Buffer 格式解析
+   - 增强的数据完整性检查
+   - 智能错误诊断和修复建议
 
 #### 使用方法
 1. **从 Google Authenticator 导出**：
@@ -295,6 +297,12 @@ npx wrangler pages dev
    - 在上传区域拖拽或选择二维码图片
    - 系统自动识别格式
    - 批量导入所有账户
+   - 自动检查数据完整性
+
+> 📝 **注意事项**：
+> - 确保二维码图片完整清晰，没有被截断或遮挡
+> - 如果导入失败，请检查图片质量和光线条件
+> - 支持多种图片格式：PNG、JPG、GIF 等
 
 ### ☁️ GitHub 云端同步
 
@@ -485,7 +493,27 @@ https://6578eeea.totp-manager-pages.pages.dev/api/health
 - 验证 Client ID 和 Secret 环境变量
 - 确保 OAuth App 包含 `gist` 权限
 
-#### 3. 部署问题
+#### 4. Google Authenticator 导入问题
+**错误**: "二维码数据不完整" 或 "Migration data appears to be incomplete"
+**解决方案**:
+- 确保二维码图片完整，没有被截断或遮挡
+- 检查图片质量和光线条件
+- 使用 Google Authenticator 的“转移账户”→“导出账户”功能
+- 重新截取二维码图片，确保完整显示
+
+**错误**: "No valid OTP data found" 或 "未找到有效数据"
+**解决方案**:
+- 验证二维码来源为 Google Authenticator 导出功能
+- 检查 Google Authenticator 版本是否支持迁移功能
+- 尝试使用不同的二维码扫描工具或图片处理软件
+
+**错误**: "Invalid Base64 data" 或 "格式错误"
+**解决方案**:
+- 确认是否使用正确的 Google Authenticator 导出二维码
+- 检查二维码识别是否准确，可尝试使用其他二维码读取工具验证
+- 确保图片清晰度足够，可尝试调整亮度和对比度
+
+#### 5. 部署问题
 **错误**: 构建失败
 **解决方案**:
 - 检查 Node.js 版本设置（推荐 18）

@@ -475,6 +475,12 @@ function App() {
                     } else if (response.data.count > 1) {
                         // Google 验证器迁移格式通常会导入多个
                         message.success(`成功导入 ${response.data.count} 个TOTP（Google 验证器迁移格式）`);
+                        
+                        // 显示导入的详细信息
+                        if (response.data.imported && response.data.imported.length > 0) {
+                            const importNames = response.data.imported.map(item => item.name).join(', ');
+                            console.log('导入的TOTP条目:', importNames);
+                        }
                     }
                     
                     await loadTOTPs(); // 刷新列表
@@ -489,10 +495,27 @@ function App() {
             let errorMessage = error.message || 'TOTP导入过程中发生错误';
             
             // 为常见错误提供友好的提示
-            if (error.message.includes('migration data')) {
-                errorMessage = 'Google 验证器迁移数据解析失败，请确保二维码来自 Google 验证器的导出功能';
+            if (error.message.includes('migration data') || error.message.includes('迁移数据')) {
+                errorMessage = (
+                    <div>
+                        <div style={{marginBottom: '8px'}}>
+                            <strong>Google 验证器迁移数据解析失败</strong>
+                        </div>
+                        <div style={{fontSize: '12px', color: '#666'}}>
+                            请检查：<br/>
+                            • 二维码图片是否完整清晰<br/>
+                            • 是否使用 Google Authenticator 的“转移账户”功能<br/>
+                            • 图片质量和光线是否足够好<br/>
+                            • 二维码是否被截断或遮挡
+                        </div>
+                    </div>
+                );
+            } else if (error.message.includes('incomplete or truncated') || error.message.includes('不完整')) {
+                errorMessage = '二维码数据不完整，请确保二维码图片完整清晰且没有被截断';
             } else if (error.message.includes('Unsupported QR code format')) {
-                errorMessage = '不支持的二维码格式，请使用 Google 验证器或标准 TOTP 二维码';
+                errorMessage = '不支持的二维码格式，请使用 Google 验证器迁移二维码或标准 TOTP 二维码';
+            } else if (error.message.includes('Base64') || error.message.includes('格式错误')) {
+                errorMessage = '二维码数据格式错误，请确保使用正确的 Google Authenticator 导出二维码';
             }
             
             message.error(errorMessage);
