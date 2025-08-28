@@ -887,7 +887,7 @@ function parseGoogleAuthMigration(migrationUri) {
     const otpList = [];
     let offset = 0;
     let attempts = 0;
-    const maxAttempts = 10; // 防止无限循环
+    const maxAttempts = 20; // 增加最大尝试次数
     
     while (offset < bytes.length && attempts < maxAttempts) {
       console.log(`Parsing attempt ${attempts + 1}, offset: ${offset}`);
@@ -896,6 +896,8 @@ function parseGoogleAuthMigration(migrationUri) {
       if (result.otp) {
         console.log('Successfully parsed OTP:', result.otp.name);
         otpList.push(result.otp);
+      } else {
+        console.log('Failed to parse OTP at offset:', offset);
       }
       
       // 更新偏移量
@@ -906,6 +908,12 @@ function parseGoogleAuthMigration(migrationUri) {
       
       offset = result.nextOffset;
       attempts++;
+      
+      // 如果已经解析出一些OTP，但遇到了无法解析的数据，先返回已解析的
+      if (otpList.length > 0 && attempts > 10 && result.nextOffset - offset < 10) {
+        console.log('Found some OTPs, stopping due to potential parsing issues');
+        break;
+      }
     }
     
     console.log(`Parsing completed. Found ${otpList.length} OTP entries`);
@@ -1022,11 +1030,18 @@ function parseOtpParameter(bytes, startOffset) {
               type = varintResult.value;
               console.log(`Found type: ${type}`);
               break;
+            default:
+              console.log(`Unknown varint field ${subFieldNumber}: ${varintResult.value}`);
+              break;
           }
         } else {
           // 跳过未知的wire type
           console.log(`Skipping unknown wire type ${subWireType}`);
           offset++;
+          // 防止无限循环
+          if (offset >= messageEnd) {
+            break;
+          }
         }
       }
       
@@ -1148,10 +1163,17 @@ async function handleImportTotp(request, env) {
       console.log('Migration URI length:', qrData.length);
       
       try {
+        console.log('Starting migration data parsing...');
         const otpList = parseGoogleAuthMigration(qrData);
-        console.log(`Parsed ${otpList.length} OTP entries`);
+        console.log(`Successfully parsed ${otpList.length} OTP entries`);
+        
+        if (otpList.length === 0) {
+          console.log('No OTP entries found in parsed data');
+          throw new Error('No valid TOTP data found in migration format. Please ensure: 1) The QR code is complete and clear, 2) The image quality is good, 3) The QR code is from Google Authenticator export function.');
+        }
         
         for (const otp of otpList) {
+          console.log(`Processing OTP: ${otp.name}`);
           if (otp.secret && otp.name) {
             const id = generateId();
             const totp = {
@@ -1171,6 +1193,9 @@ async function handleImportTotp(request, env) {
               issuer: otp.issuer
             });
             count++;
+            console.log(`Successfully imported: ${otp.name}`);
+          } else {
+            console.log(`Skipping invalid OTP entry: missing secret or name`);
           }
         }
         
