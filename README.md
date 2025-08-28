@@ -26,7 +26,6 @@ TotpmanagerPages/
 │   │   └── services/api.js     # API 服务层
 │   ├── public/                 # 静态资源
 │   └── build/                  # 构建输出（部署时生成）
-├── wrangler.toml               # Cloudflare Pages 配置（基础设置）
 └── package.json                # 项目依赖配置
 ```
 
@@ -89,6 +88,10 @@ npx wrangler kv namespace create "TOTP_KV_PREVIEW"
 4. 记录下 **Namespace ID**
 
 #### 5. 配置 KV 绑定
+
+> 📝 **重要说明**：本项目完全使用 Cloudflare Dashboard 进行配置，无需 `wrangler.toml` 文件。
+> 这样可以避免配置冲突，并提供更好的安全性和管理体验。
+
 1. 回到 Pages 项目
 2. 进入 **Settings** → **Functions**
 3. 在 **KV namespace bindings** 部分添加：
@@ -166,8 +169,8 @@ npx wrangler pages dev
 
 ### 本地开发注意事项
 - 本地开发需要配置 KV 命名空间
-- 建议创建 development 环境的 KV 命名空间
-- 在 `wrangler.toml` 中配置 `preview_id`
+- 建议使用 `npx wrangler pages dev` 进行本地测试
+- 所有配置在 Cloudflare Dashboard 中管理
 
 ## 📱 功能介绍
 
@@ -359,9 +362,9 @@ https://your-pages-domain.pages.dev/api/health
 
 **错误**: "Invalid KV namespace ID. Not a valid hex string"
 **解决方案**:
-- 检查 `wrangler.toml` 中的 KV namespace ID 是否为占位符
-- 使用 `npx wrangler kv namespace create "TOTP_KV"` 创建真实的 KV 命名空间
-- 将生成的 ID 更新到 `wrangler.toml` 文件中
+- 使用 Dashboard 面板配置 KV 绑定，避免配置文件问题
+- 确认在 **Settings** > **Functions** > **KV namespace bindings** 中正确设置
+- 验证 Variable name 为 `TOTP_KV`，选择正确的 KV 命名空间
 
 #### 2. GitHub 同步问题
 **错误**: GitHub API 403 错误
