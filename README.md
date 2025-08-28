@@ -46,11 +46,11 @@ TotpmanagerPages/
 #### 快速部署命令
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/TotpmanagerPages.git
+git clone https://github.com/zxzx412/TotpmanagerPages.git
 cd TotpmanagerPages
 
 # 推送到您的 GitHub 仓库
-git remote set-url origin https://github.com/your-username/your-repo-name.git
+git remote set-url origin https://github.com/zxzx412/TotpmanagerPages.git
 git push origin main
 ```
 
@@ -80,7 +80,6 @@ Root directory: (留空)
 ```bash
 # 确保您已登录到 Cloudflare
 npx wrangler kv namespace create "TOTP_KV"
-npx wrangler kv namespace create "TOTP_KV_PREVIEW"
 ```
 
 **方法2：使用 Cloudflare Dashboard**
@@ -121,37 +120,63 @@ NODE_VERSION=18
 JWT_SECRET=your-super-secret-jwt-key-here
 ```
 
-**GitHub 同步功能变量（可选）：**
+**GitHub 同步功能必需变量：**
 ```env
 GITHUB_CLIENT_ID=your-github-oauth-app-client-id
 GITHUB_CLIENT_SECRET=your-github-oauth-app-client-secret
 GITHUB_REDIRECT_URI=https://your-pages-domain.pages.dev/api/github/callback
-FRONTEND_URL=https://your-pages-domain.pages.dev
 ```
 
-**前端应用配置变量（可选）：**
+**可选变量（为了兼容性或特殊配置）：**
 ```env
+FRONTEND_URL=https://your-pages-domain.pages.dev
 REACT_APP_API_BASE_URL=https://your-pages-domain.pages.dev
 REACT_APP_GITHUB_AUTH_URL=https://your-pages-domain.pages.dev/api/github/auth
 ```
+
+> 📝 **最小化配置说明**：
+> - **只需5个变量**：基于代码分析，实际只需要上述5个环境变量即可完整实现GitHub同步
+> - **智能默认值**：其他3个变量都有代码中的fallback机制，Cloudflare Pages同域部署时可完全省略
+> - **简化部署**：减少配置复杂度，降低出错概率
 
 ### 📋 环境变量详细说明
 
 | 变量名 | 类型 | 说明 | 示例值 |
 |--------|------|------|--------|
-| `NODE_VERSION` | 必需 | Node.js 运行时版本 | `18` |
-| `JWT_SECRET` | 必需 | JWT 令牌签名密钥（建议64位随机字符串） | `your-super-secret-jwt-key-here` |
-| `GITHUB_CLIENT_ID` | 可选 | GitHub OAuth App 客户端ID | `Ov23liabcdefghij` |
-| `GITHUB_CLIENT_SECRET` | 可选 | GitHub OAuth App 客户端密钥 | `1234567890abcdefghij1234567890abcdefgh` |
-| `GITHUB_REDIRECT_URI` | 可选 | GitHub OAuth 回调URI | `https://your-pages-domain.pages.dev/api/github/callback` |
-| `FRONTEND_URL` | 可选 | 前端应用完整URL（用于OAuth回调） | `https://your-pages-domain.pages.dev` |
-| `REACT_APP_API_BASE_URL` | 可选 | 前端API基础URL | `https://your-pages-domain.pages.dev` |
-| `REACT_APP_GITHUB_AUTH_URL` | 可选 | 前端GitHub认证URL | `https://your-pages-domain.pages.dev/api/github/auth` |
+| `NODE_VERSION` | ✅ 必需 | Node.js 运行时版本 | `18` |
+| `JWT_SECRET` | ✅ 必需 | JWT 令牌签名密钥（建议64位随机字符串） | `your-super-secret-jwt-key-here` |
+| `GITHUB_CLIENT_ID` | 🔗 GitHub必需 | GitHub OAuth App 客户端ID | `Ov23liabcdefghij` |
+| `GITHUB_CLIENT_SECRET` | 🔗 GitHub必需 | GitHub OAuth App 客户端密钥 | `1234567890abcdefghij1234567890abcdefgh` |
+| `GITHUB_REDIRECT_URI` | 🔗 GitHub必需 | GitHub OAuth 回调URI | `https://your-pages-domain.pages.dev/api/github/callback` |
+| `FRONTEND_URL` | 🔸 可选 | 前端应用完整URL（可代码动态获取） | `https://your-pages-domain.pages.dev` |
+| `REACT_APP_API_BASE_URL` | 🔸 可选 | 前端API基础URL（同域部署可省略） | `https://your-pages-domain.pages.dev` |
+| `REACT_APP_GITHUB_AUTH_URL` | 🔸 可选 | 前端GitHub认证URL（可使用相对路径） | `https://your-pages-domain.pages.dev/api/github/auth` |
 
 > ⚠️ **安全提示**：
 > - `JWT_SECRET` 必须是强随机字符串，建议使用64位字符
 > - `GITHUB_CLIENT_SECRET` 是敏感信息，切勿泄露
 > - 所有URL应使用HTTPS协议
+
+## 🎯 **最小化配置方案**
+
+**基于代码分析，实现GitHub同步功能的最小配置：**
+
+```env
+# 基础运行必需（2个）
+NODE_VERSION=18
+JWT_SECRET=your-super-secret-jwt-key-here
+
+# GitHub OAuth必需（3个）
+GITHUB_CLIENT_ID=your-github-oauth-app-client-id
+GITHUB_CLIENT_SECRET=your-github-oauth-app-client-secret
+GITHUB_REDIRECT_URI=https://your-pages-domain.pages.dev/api/github/callback
+```
+
+**为什么只需要5个变量？**
+
+- ✅ **`FRONTEND_URL`** - 代码中有fallback: `env.FRONTEND_URL || 'https://2fa.wkk.su'`
+- ✅ **`REACT_APP_API_BASE_URL`** - 生产环境默认使用空字符串（相对路径）
+- ✅ **`REACT_APP_GITHUB_AUTH_URL`** - 生产环境默认使用 `/api/github/auth`
 
 #### 7. GitHub OAuth 配置（可选）
 如需使用 GitHub 同步功能：
