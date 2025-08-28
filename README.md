@@ -125,6 +125,7 @@ JWT_SECRET=your-super-secret-jwt-key-here
 ```env
 GITHUB_CLIENT_ID=your-github-oauth-app-client-id
 GITHUB_CLIENT_SECRET=your-github-oauth-app-client-secret
+GITHUB_REDIRECT_URI=https://your-pages-domain.pages.dev/api/github/callback
 FRONTEND_URL=https://your-pages-domain.pages.dev
 ```
 
@@ -142,6 +143,7 @@ REACT_APP_GITHUB_AUTH_URL=https://your-pages-domain.pages.dev/api/github/auth
 | `JWT_SECRET` | 必需 | JWT 令牌签名密钥（建议64位随机字符串） | `your-super-secret-jwt-key-here` |
 | `GITHUB_CLIENT_ID` | 可选 | GitHub OAuth App 客户端ID | `Ov23liabcdefghij` |
 | `GITHUB_CLIENT_SECRET` | 可选 | GitHub OAuth App 客户端密钥 | `1234567890abcdefghij1234567890abcdefgh` |
+| `GITHUB_REDIRECT_URI` | 可选 | GitHub OAuth 回调URI | `https://your-pages-domain.pages.dev/api/github/callback` |
 | `FRONTEND_URL` | 可选 | 前端应用完整URL（用于OAuth回调） | `https://your-pages-domain.pages.dev` |
 | `REACT_APP_API_BASE_URL` | 可选 | 前端API基础URL | `https://your-pages-domain.pages.dev` |
 | `REACT_APP_GITHUB_AUTH_URL` | 可选 | 前端GitHub认证URL | `https://your-pages-domain.pages.dev/api/github/auth` |
@@ -174,6 +176,7 @@ REACT_APP_GITHUB_AUTH_URL=https://your-pages-domain.pages.dev/api/github/auth
 # GitHub OAuth 配置
 GITHUB_CLIENT_ID=你的Client_ID
 GITHUB_CLIENT_SECRET=你的Client_Secret
+GITHUB_REDIRECT_URI=https://your-pages-domain.pages.dev/api/github/callback
 FRONTEND_URL=https://your-pages-domain.pages.dev
 
 # 前端应用配置
@@ -183,8 +186,13 @@ REACT_APP_GITHUB_AUTH_URL=https://your-pages-domain.pages.dev/api/github/auth
 
 **步骤4：验证配置**
 - 确保 OAuth App 权限包含 `gist` 权限
-- 回调URL 必须与 `FRONTEND_URL` 一致
+- 回调URL 必须与 `GITHUB_REDIRECT_URI` 一致
+- `GITHUB_REDIRECT_URI` 应与 `FRONTEND_URL` 保持一致的域名
 - 所有URL都使用HTTPS协议
+
+> 📝 **重要提示**：
+> `GITHUB_REDIRECT_URI` 必须与 GitHub OAuth App 中配置的 "Authorization callback URL" 完全一致，
+> 否则 OAuth 认证会失败。
 
 #### 8. 部署完成！
 - 访问您的 Pages 域名
@@ -440,8 +448,9 @@ https://6578eeea.totp-manager-pages.pages.dev/api/health
 **错误**: GitHub 认证失败
 **解决方案**:
 - 检查所有 GitHub 相关环境变量是否已设置
-- 确保 `REACT_APP_GITHUB_AUTH_URL` 指向正确的认证端点
-- 验证前端和后端域名一致性
+- 确保 `GITHUB_REDIRECT_URI` 与 OAuth App 配置一致
+- 验证 `REACT_APP_GITHUB_AUTH_URL` 指向正确的认证端点
+- 确认前端和后端域名一致性
 
 #### 4. 部署问题
 **错误**: GitHub API 403 错误
