@@ -195,30 +195,6 @@ function App() {
 
     const [isLoadingTOTPs, setIsLoadingTOTPs] = useState(false);
 
-    const loadTOTPs = useCallback(async () => {
-        if (!isLoggedIn) return;
-        try {
-            setIsLoadingTOTPs(true);
-            const response = await api.getTOTPs();
-            setTotps(response.data);
-            
-            // 加载完成后立即生成所有令牌
-            if (response.data && response.data.length > 0) {
-                console.log('加载完成，立即生成令牌');
-                // 稍微延迟以确保状态更新
-                setTimeout(() => {
-                    response.data.forEach(totp => {
-                        generateToken(totp.id);
-                    });
-                }, 100);
-            }
-        } catch (error) {
-            console.error('加载TOTP列表失败:', error);
-            message.error('加载TOTP列表失败');
-        } finally {
-            setIsLoadingTOTPs(false);
-        }
-    }, [isLoggedIn, generateToken]);
     const checkAuthStatus = useCallback(async () => {
         if (!isLoggedIn) return;
         try {
@@ -237,8 +213,10 @@ function App() {
             console.error('Failed to check GitHub auth status:', error);
         }
     }, [isLoggedIn]);
+    
     const [generatingTokens, setGeneratingTokens] = useState(new Set()); // 记录正在生成令牌的ID
     
+    // 将generateToken函数移到loadTOTPs之前定义，解决编译错误
     const generateToken = useCallback(async (id) => {
         // 防止重复生成
         if (generatingTokens.has(id)) {
@@ -279,6 +257,28 @@ function App() {
             });
         }
     }, [totps, generatingTokens]);
+    
+    const loadTOTPs = useCallback(async () => {
+        if (!isLoggedIn) return;
+        setIsLoadingTOTPs(true);
+        try {
+            const response = await api.getTOTPs();
+            setTotps(response.data);
+            // 延迟生成令牌，确保状态已更新
+            if (response.data.length > 0) {
+                setTimeout(() => {
+                    response.data.forEach(totp => {
+                        generateToken(totp.id);
+                    });
+                }, 100);
+            }
+        } catch (error) {
+            console.error('加载TOTP列表失败:', error);
+            message.error('加载TOTP列表失败');
+        } finally {
+            setIsLoadingTOTPs(false);
+        }
+    }, [isLoggedIn, generateToken]);
     useEffect(() => {
         const token = Cookies.get('sessionToken');
         if (token) {
