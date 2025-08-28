@@ -1,4 +1,5 @@
 import React, {useState, useEffect, useCallback, useMemo} from 'react';
+import axios from 'axios';
 import {
     Layout,
     Menu,
@@ -109,6 +110,7 @@ function App() {
     const [password, setPassword] = useState('');
     const [isRegistering, setIsRegistering] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [currentUser, setCurrentUser] = useState(''); // 添加当前用户状态
     const formatSecret = useCallback((secret) => {
         const cleanSecret = secret.replace(/\s+/g, '');
         return cleanSecret.match(/.{1,4}/g)?.join(' ') || cleanSecret;
@@ -130,6 +132,8 @@ function App() {
             if (response.status === 201) {
                 // 如果注册后后端返回会话令牌，也进行保存
                 Cookies.set('sessionToken', response.data.token);
+                setCurrentUser(response.data.user?.username || username); // 设置当前用户
+                setIsLoggedIn(true); // 注册成功后直接登录
                 message.success('注册成功');
                 setIsRegistering(false);
             } else {
@@ -154,6 +158,7 @@ function App() {
             const response = await api.login(username, password);
             if (response.status === 200) {
                 Cookies.set('sessionToken', response.data.token);
+                setCurrentUser(response.data.user?.username || username); // 设置当前用户
                 setIsLoggedIn(true);
                 message.success('登录成功');
             } else {
@@ -175,6 +180,7 @@ function App() {
             await api.logout();
             Cookies.remove('sessionToken');
             setIsLoggedIn(false);
+            setCurrentUser(''); // 清除当前用户
             setTotps([]);
             setSyncEnabled(false);
             setUserInfo('');
@@ -196,13 +202,24 @@ function App() {
             setIsLoadingTOTPs(true);
             const response = await api.getTOTPs();
             setTotps(response.data);
+            
+            // 加载完成后立即生成所有令牌
+            if (response.data && response.data.length > 0) {
+                console.log('加载完成，立即生成令牌');
+                // 稍微延迟以确保状态更新
+                setTimeout(() => {
+                    response.data.forEach(totp => {
+                        generateToken(totp.id);
+                    });
+                }, 100);
+            }
         } catch (error) {
             console.error('加载TOTP列表失败:', error);
             message.error('加载TOTP列表失败');
         } finally {
             setIsLoadingTOTPs(false);
         }
-    }, [isLoggedIn]);
+    }, [isLoggedIn, generateToken]);
     const checkAuthStatus = useCallback(async () => {
         if (!isLoggedIn) return;
         try {
@@ -221,23 +238,48 @@ function App() {
             console.error('Failed to check GitHub auth status:', error);
         }
     }, [isLoggedIn]);
+    const [generatingTokens, setGeneratingTokens] = useState(new Set()); // 记录正在生成令牌的ID
+    
     const generateToken = useCallback(async (id) => {
+        // 防止重复生成
+        if (generatingTokens.has(id)) {
+            console.log(`Token generation already in progress for ${id}`);
+            return;
+        }
+        
         try {
+            setGeneratingTokens(prev => new Set([...prev, id]));
+            
             if (totps.length === 0) {
-                message.info('TOTP 列表为空，无法生成令牌。');
+                console.log('TOTP 列表为空，无法生成令牌');
                 return;
             }
+            
             const response = await api.generateToken(id);
             if (response.data.error) {
-                message.error(response.data.error);
+                console.error(`令牌生成错误 (${id}):`, response.data.error);
+                // 只在非找不到TOTP的情况下显示错误消息
+                if (!response.data.error.includes('TOTP not found')) {
+                    message.error(`令牌生成失败: ${response.data.error}`);
+                }
             } else {
                 setTokens(prev => ({...prev, [id]: response.data.token }));
+                console.log(`令牌生成成功 (${id}):`, response.data.token);
             }
         } catch (error) {
-            console.error('令牌生成失败:', error);
-            message.error('令牌生成失败');
+            console.error(`令牌生成失败 (${id}):`, error);
+            // 只在非401错误时显示错误消息
+            if (error.response?.status !== 401) {
+                message.error('令牌生成失败');
+            }
+        } finally {
+            setGeneratingTokens(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(id);
+                return newSet;
+            });
         }
-    }, [totps]);
+    }, [totps, generatingTokens]);
     useEffect(() => {
         const token = Cookies.get('sessionToken');
         if (token) {
@@ -249,22 +291,35 @@ function App() {
 
 
     useEffect(() => {
-        if (!isLoggedIn) return;
+        if (!isLoggedIn || totps.length === 0) return;
 
         const generateAllTokens = () => {
-            totps.forEach(totp => generateToken(totp.id));
+            console.log('定时生成所有令牌');
+            totps.forEach(totp => {
+                generateToken(totp.id);
+            });
         };
 
         const now = Math.floor(Date.now() / 1000);
-        const delay = ((30 - (now % 30)) * 1000) + 50; // 加50毫秒确保我们在新周期开始后生成令牌
+        const delay = ((30 - (now % 30)) * 1000) + 100; // 加100毫秒确保在新周期开始后生成令牌
 
+        console.log(`设置定时器，${delay}ms后开始自动刷新`);
+        
         const timeout = setTimeout(() => {
             generateAllTokens();
             const interval = setInterval(generateAllTokens, 30000);
-            return () => clearInterval(interval);
+            
+            // 返回清理函数
+            return () => {
+                console.log('清理定时器');
+                clearInterval(interval);
+            };
         }, delay);
 
-        return () => clearTimeout(timeout);
+        return () => {
+            console.log('清理初始定时器');
+            clearTimeout(timeout);
+        };
     }, [isLoggedIn, totps, generateToken]);
 
     const addTOTP = useCallback(async () => {
@@ -364,8 +419,13 @@ function App() {
 
     const uploadToGist = async () => {
         try {
-            await api.uploadToGist(backupMode);
-            message.success('数据成功上传到Gist');
+            const response = await api.uploadToGist(backupMode);
+            if (response.data.success) {
+                const action = response.data.action === 'updated' ? '更新' : '创建';
+                message.success(`数据成功${action}到Gist`);
+            } else {
+                throw new Error(response.data.error || '上传失败');
+            }
         } catch (error) {
             console.error('上传到Gist失败:', error);
             message.error('上传到Gist失败');
@@ -593,6 +653,20 @@ function App() {
                         justifyContent: 'space-between'
                     }}>
                         <div style={{flex: 1}}>
+                            {/* 显示当前用户信息 */}
+                            {currentUser && (
+                                <div style={{
+                                    marginBottom: '16px',
+                                    padding: '8px 12px',
+                                    backgroundColor: '#f0f9ff',
+                                    borderRadius: '4px',
+                                    border: '1px solid #91d5ff'
+                                }}>
+                                    <Text strong style={{color: '#1890ff'}}>
+                                        当前用户: {currentUser}
+                                    </Text>
+                                </div>
+                            )}
                             <div style={{
                                 display: 'flex',
                                 flexDirection: isDesktopOrLaptop ? 'row' : 'column',

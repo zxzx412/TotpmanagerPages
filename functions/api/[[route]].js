@@ -784,9 +784,6 @@ async function handleTestMigrationData(request, env) {
   }
 }
 
-  }
-}
-
 // 删除TOTP
 async function handleDeleteTotp(request, env, id) {
   const user = await getAuthenticatedUser(request, env);
@@ -1673,6 +1670,46 @@ async function handleUploadToGist(request, env) {
       version: '1.0'
     };
     
+    let gistId = null;
+    let method = 'POST';
+    let apiUrl = 'https://api.github.com/gists';
+    
+    // 如果是更新模式，查找现有的备份
+    if (mode === 'update') {
+      console.log('Update mode: searching for existing backup...');
+      
+      // 获取用户的所有 Gist
+      const gistsResponse = await fetch('https://api.github.com/gists', {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'TOTP-Manager/1.0'
+        }
+      });
+      
+      if (gistsResponse.ok) {
+        const gists = await gistsResponse.json();
+        console.log('Total gists found:', gists.length);
+        
+        // 查找现有的 TOTP 备份
+        const existingBackup = gists.find(gist => 
+          gist.description && gist.description.includes('TOTP Backup') &&
+          gist.files && gist.files['totp-backup.json']
+        );
+        
+        if (existingBackup) {
+          gistId = existingBackup.id;
+          method = 'PATCH';
+          apiUrl = `https://api.github.com/gists/${gistId}`;
+          console.log('Found existing backup, will update:', gistId);
+        } else {
+          console.log('No existing backup found, will create new one');
+        }
+      } else {
+        console.log('Failed to fetch gists, will create new backup');
+      }
+    }
+    
     const gistData = {
       description: `TOTP Backup - ${new Date().toLocaleString()}`,
       public: false,
@@ -1684,11 +1721,13 @@ async function handleUploadToGist(request, env) {
     };
     
     console.log('Gist data prepared, sending to GitHub API...');
+    console.log('Method:', method);
+    console.log('API URL:', apiUrl);
     console.log('Gist description:', gistData.description);
     console.log('File content length:', gistData.files['totp-backup.json'].content.length);
     
-    const response = await fetch('https://api.github.com/gists', {
-      method: 'POST',
+    const response = await fetch(apiUrl, {
+      method: method,
       headers: {
         'Authorization': `token ${token}`,
         'Accept': 'application/vnd.github.v3+json',
@@ -1703,11 +1742,12 @@ async function handleUploadToGist(request, env) {
     
     if (response.ok) {
       const result = await response.json();
-      console.log('Gist created successfully:', result.id);
+      console.log('Gist operation successful:', result.id);
       return new Response(JSON.stringify({ 
         success: true,
         gist_id: result.id,
-        message: 'Backup uploaded successfully'
+        action: method === 'PATCH' ? 'updated' : 'created',
+        message: method === 'PATCH' ? 'Backup updated successfully' : 'Backup created successfully'
       }), {
         headers: { 'Content-Type': 'application/json' }
       });
