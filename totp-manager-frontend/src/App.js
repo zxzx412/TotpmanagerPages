@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useMemo, useRef} from 'react';
+import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import {
     Layout,
     Menu,
@@ -45,7 +45,7 @@ const {Header, Content, Footer} = Layout;
 const {Dragger} = Upload;
 const {Text} = Typography;
 
-const CountdownTimer = React.memo(({onComplete, id}) => {
+const CountdownTimer = React.memo(({onComplete}) => {
     const [currentSecond, setCurrentSecond] = useState(0);
 
     useEffect(() => {
@@ -60,14 +60,14 @@ const CountdownTimer = React.memo(({onComplete, id}) => {
             const newSecond = calculateCurrentSecond();
             setCurrentSecond(newSecond);
             
-            // 当进入新周期时触发回调，确保只在周期开始时调用一次
+            // 当进入新周期时触发回调
             if (newSecond === 0) {
-                onComplete(id);
+                onComplete();
             }
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [onComplete, id]);
+    }, [onComplete]);
 
     const radius = 15;
     const circumference = 2 * Math.PI * radius;
@@ -221,7 +221,6 @@ function App() {
     }, [isLoggedIn]);
     
     const [generatingTokens, setGeneratingTokens] = useState(new Set()); // 记录正在生成令牌的ID
-    const lastGeneratedTime = useRef({}); // 记录每个令牌最后生成时间
     
     // 将generateToken函数移到loadTOTPs之前定义，解决编译错误
     const generateToken = useCallback(async (id) => {
@@ -231,17 +230,8 @@ function App() {
             return;
         }
         
-        // 添加节流控制，避免过于频繁的调用
-        const now = Date.now();
-        const lastTime = lastGeneratedTime.current[id] || 0;
-        if (now - lastTime < 1000) { // 1秒内不重复生成同一个令牌
-            console.log(`Skipping token generation for ${id}, too frequent`);
-            return;
-        }
-        
         try {
             setGeneratingTokens(prev => new Set([...prev, id]));
-            lastGeneratedTime.current[id] = now;
             
             if (totps.length === 0) {
                 console.log('TOTP 列表为空，无法生成令牌');
@@ -266,11 +256,14 @@ function App() {
                 message.error('令牌生成失败');
             }
         } finally {
-            setGeneratingTokens(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(id);
-                return newSet;
-            });
+            // 延迟清理标记，防止短时间内重复请求
+            setTimeout(() => {
+                setGeneratingTokens(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(id);
+                    return newSet;
+                });
+            }, 1000);
         }
     }, [totps, generatingTokens]);
     
@@ -280,11 +273,17 @@ function App() {
         try {
             const response = await api.getTOTPs();
             setTotps(response.data);
-            // 不需要延迟生成令牌，直接生成
+            // 延迟生成令牌，确保状态已更新
             if (response.data.length > 0) {
-                response.data.forEach(totp => {
-                    generateToken(totp.id);
-                });
+                // 使用小延迟确保状态更新完成
+                setTimeout(() => {
+                    response.data.forEach(totp => {
+                        // 检查令牌是否已存在，避免重复生成
+                        if (!tokens[totp.id]) {
+                            generateToken(totp.id);
+                        }
+                    });
+                }, 100);
             }
         } catch (error) {
             console.error('加载TOTP列表失败:', error);
@@ -292,7 +291,7 @@ function App() {
         } finally {
             setIsLoadingTOTPs(false);
         }
-    }, [isLoggedIn, generateToken]); // 添加generateToken依赖项
+    }, [isLoggedIn, generateToken, tokens]);
 
     useEffect(() => {
         const token = Cookies.get('sessionToken');
@@ -301,7 +300,7 @@ function App() {
             loadTOTPs();
             checkAuthStatus();
         }
-    }, [isLoggedIn, loadTOTPs, checkAuthStatus]); // 移除generateToken依赖项
+    }, [isLoggedIn, loadTOTPs, checkAuthStatus]);
 
     const addTOTP = useCallback(async () => {
         if (!userInfo || !secret) {
@@ -599,7 +598,7 @@ function App() {
             render: (text, record) => (
                 <Space>
                     <Text strong>{tokens[record.id] || '未生成'}</Text>
-                    <CountdownTimer onComplete={generateToken} id={record.id}/>
+                    <CountdownTimer onComplete={() => generateToken(record.id)}/>
                 </Space>
             ),
         },
