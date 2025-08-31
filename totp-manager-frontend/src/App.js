@@ -48,6 +48,13 @@ const {Text} = Typography;
 const CountdownTimer = React.memo(({onComplete}) => {
     const [currentSecond, setCurrentSecond] = useState(0);
 
+    // 使用 useCallback 确保 onComplete 回调引用稳定
+    const handleComplete = useCallback(() => {
+        if (onComplete) {
+            onComplete();
+        }
+    }, [onComplete]);
+
     useEffect(() => {
         const calculateCurrentSecond = () => {
             const now = Math.floor(Date.now() / 1000);
@@ -62,12 +69,13 @@ const CountdownTimer = React.memo(({onComplete}) => {
             
             // 当进入新周期时触发回调
             if (newSecond === 0) {
-                onComplete();
+                handleComplete();
             }
         }, 1000);
 
+        // 清理函数确保定时器被正确清除
         return () => clearInterval(interval);
-    }, [onComplete]);
+    }, [handleComplete]); // 依赖项改为 handleComplete
 
     const radius = 15;
     const circumference = 2 * Math.PI * radius;
