@@ -570,57 +570,59 @@ function App() {
         showUploadList: false,
     };
 
-    const columns = useMemo(() => [
-        {
-            title: '序号',
-            key: 'index',
-            render: (text, record, index) => index + 1,
-            width: 80,
-        },
-        {
-            title: '用户信息',
-            dataIndex: 'user_info',
-            key: 'user_info',
-            ellipsis: true,
-        },
-        {
-            title: '密钥',
-            dataIndex: 'secret',
-            key: 'secret',
-            render: (text) => text && text.length > 0 ? <Text copyable>{formatSecret(text)}</Text> : '已清空',
-            ellipsis: true,
-        },
-        {
-            title: '令牌',
-            key: 'token',
-            render: (text, record) => {
-                const handleComplete = useCallback(() => generateToken(record.id), [record.id, generateToken]);
-                return (
+    const columns = useMemo(() => {
+        // 为每个TOTP项创建稳定的回调函数
+        const createHandleComplete = (id) => () => generateToken(id);
+        
+        return [
+            {
+                title: '序号',
+                key: 'index',
+                render: (text, record, index) => index + 1,
+                width: 80,
+            },
+            {
+                title: '用户信息',
+                dataIndex: 'user_info',
+                key: 'user_info',
+                ellipsis: true,
+            },
+            {
+                title: '密钥',
+                dataIndex: 'secret',
+                key: 'secret',
+                render: (text) => text && text.length > 0 ? <Text copyable>{formatSecret(text)}</Text> : '已清空',
+                ellipsis: true,
+            },
+            {
+                title: '令牌',
+                key: 'token',
+                render: (text, record) => (
                     <Space>
                         <Text strong>{tokens[record.id] || '未生成'}</Text>
-                        <CountdownTimer onComplete={handleComplete}/>
+                        <CountdownTimer onComplete={createHandleComplete(record.id)}/>
                     </Space>
-                );
+                ),
             },
-        },
-        {
-            title: '操作',
-            key: 'action',
-            render: (text, record) => (
-                <Space>
-                    <Button onClick={() => generateToken(record.id)} type="primary" size="small">
-                        生成令牌
-                    </Button>
-                    <Button onClick={() => showQRCode(record)} size="small" icon={<QrcodeOutlined/>}>
-                        导出
-                    </Button>
-                    <Button onClick={() => deleteTOTP(record.id)} danger size="small">
-                        删除
-                    </Button>
-                </Space>
-            ),
-        },
-    ], [generateToken, showQRCode, deleteTOTP, tokens, formatSecret]);
+            {
+                title: '操作',
+                key: 'action',
+                render: (text, record) => (
+                    <Space>
+                        <Button onClick={() => generateToken(record.id)} type="primary" size="small">
+                            生成令牌
+                        </Button>
+                        <Button onClick={() => showQRCode(record)} size="small" icon={<QrcodeOutlined/>}>
+                            导出
+                        </Button>
+                        <Button onClick={() => deleteTOTP(record.id)} danger size="small">
+                            删除
+                        </Button>
+                    </Space>
+                ),
+            },
+        ];
+    }, [generateToken, showQRCode, deleteTOTP, tokens, formatSecret]);
 
     const renderContent = () => (
         <PageContainer>
