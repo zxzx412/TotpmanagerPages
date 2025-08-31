@@ -265,7 +265,7 @@ function App() {
                 });
             }, 1000);
         }
-    }, [totps, generatingTokens]);
+    }, [totps.length, generatingTokens]);
     
     const loadTOTPs = useCallback(async () => {
         if (!isLoggedIn) return;
@@ -278,10 +278,8 @@ function App() {
                 // 使用小延迟确保状态更新完成
                 setTimeout(() => {
                     response.data.forEach(totp => {
-                        // 检查令牌是否已存在，避免重复生成
-                        if (!tokens[totp.id]) {
-                            generateToken(totp.id);
-                        }
+                        // 直接生成令牌，不检查是否已存在
+                        generateToken(totp.id);
                     });
                 }, 100);
             }
@@ -291,7 +289,7 @@ function App() {
         } finally {
             setIsLoadingTOTPs(false);
         }
-    }, [isLoggedIn, generateToken, tokens]);
+    }, [isLoggedIn, generateToken]);
 
     useEffect(() => {
         const token = Cookies.get('sessionToken');
@@ -595,12 +593,15 @@ function App() {
         {
             title: '令牌',
             key: 'token',
-            render: (text, record) => (
-                <Space>
-                    <Text strong>{tokens[record.id] || '未生成'}</Text>
-                    <CountdownTimer onComplete={() => generateToken(record.id)}/>
-                </Space>
-            ),
+            render: (text, record) => {
+                const handleComplete = useCallback(() => generateToken(record.id), [record.id, generateToken]);
+                return (
+                    <Space>
+                        <Text strong>{tokens[record.id] || '未生成'}</Text>
+                        <CountdownTimer onComplete={handleComplete}/>
+                    </Space>
+                );
+            },
         },
         {
             title: '操作',
