@@ -111,6 +111,7 @@ function App() {
     const [qrModalVisible, setQrModalVisible] = useState(false);
     const [currentQR, setCurrentQR] = useState('');
     const [tokens, setTokens] = useState({});
+    const [tokenTimestamps, setTokenTimestamps] = useState({}); // 记录令牌生成时间
     const [syncEnabled, setSyncEnabled] = useState(false);
     const [backupMode, setBackupMode] = useState('update');
     const [backupModalVisible, setBackupModalVisible] = useState(false);
@@ -198,6 +199,8 @@ function App() {
             setSyncEnabled(false);
             setUserInfo('');
             setPassword('');
+            setTokens({}); // 清除令牌
+            setTokenTimestamps({}); // 清除令牌时间戳
             message.success('已退出登录');
         } catch (error) {
             console.error('退出登录失败:', error);
@@ -230,8 +233,27 @@ function App() {
     
     const [generatingTokens, setGeneratingTokens] = useState(new Set()); // 记录正在生成令牌的ID
     
+    // 检查令牌是否需要刷新（基于30秒周期）
+    const isTokenExpired = useCallback((id) => {
+        const timestamp = tokenTimestamps[id];
+        if (!timestamp) return true; // 没有时间戳说明还没生成过
+        
+        const now = Math.floor(Date.now() / 1000);
+        const tokenTime = Math.floor(timestamp / 1000);
+        const currentPeriod = Math.floor(now / 30);
+        const tokenPeriod = Math.floor(tokenTime / 30);
+        
+        return currentPeriod !== tokenPeriod; // 不在同一个30秒周期内则过期
+    }, [tokenTimestamps]);
+
     // 将generateToken函数移到loadTOTPs之前定义，解决编译错误
-    const generateToken = useCallback(async (id) => {
+    const generateToken = useCallback(async (id, forceGenerate = false) => {
+        // 检查是否需要生成新令牌
+        if (!forceGenerate && !isTokenExpired(id) && tokens[id]) {
+            console.log(`Token for ${id} is still valid, skipping generation`);
+            return;
+        }
+        
         // 防止重复生成
         if (generatingTokens.has(id)) {
             console.log(`Token generation already in progress for ${id}`);
@@ -254,7 +276,9 @@ function App() {
                     message.error(`令牌生成失败: ${response.data.error}`);
                 }
             } else {
+                const currentTime = Date.now();
                 setTokens(prev => ({...prev, [id]: response.data.token }));
+                setTokenTimestamps(prev => ({...prev, [id]: currentTime })); // 记录生成时间
                 console.log(`令牌生成成功 (${id}):`, response.data.token);
             }
         } catch (error) {
@@ -273,7 +297,7 @@ function App() {
                 });
             }, 1000);
         }
-    }, [totps.length, generatingTokens]);
+    }, [totps.length, generatingTokens, isTokenExpired, tokens]);
     
     const loadTOTPs = useCallback(async () => {
         if (!isLoggedIn) return;
@@ -281,23 +305,15 @@ function App() {
         try {
             const response = await api.getTOTPs();
             setTotps(response.data);
-            // 延迟生成令牌，确保状态已更新
-            if (response.data.length > 0) {
-                // 使用小延迟确保状态更新完成
-                setTimeout(() => {
-                    response.data.forEach(totp => {
-                        // 直接生成令牌，不检查是否已存在
-                        generateToken(totp.id);
-                    });
-                }, 100);
-            }
+            // 不再自动生成所有令牌，只在用户需要时生成
+            console.log(`加载了 ${response.data.length} 个TOTP条目`);
         } catch (error) {
             console.error('加载TOTP列表失败:', error);
             message.error('加载TOTP列表失败');
         } finally {
             setIsLoadingTOTPs(false);
         }
-    }, [isLoggedIn, generateToken]);
+    }, [isLoggedIn]);
 
     useEffect(() => {
         const token = Cookies.get('sessionToken');
@@ -443,6 +459,7 @@ function App() {
             message.success('所有TOTP已清除');
             await loadTOTPs();
             setTokens({});
+            setTokenTimestamps({});
         } catch (error) {
             console.error('清除所有TOTP失败:', error);
             message.error('清除所有TOTP失败');
@@ -579,8 +596,12 @@ function App() {
     };
 
     const columns = useMemo(() => {
-        // 为每个TOTP项创建稳定的回调函数
-        const createHandleComplete = (id) => () => generateToken(id);
+        // 为每个TOTP项创建稳定的回调函数，只在令牌过期时生成
+        const createHandleComplete = (id) => () => {
+            if (isTokenExpired(id)) {
+                generateToken(id);
+            }
+        };
         
         return [
             {
@@ -605,19 +626,24 @@ function App() {
             {
                 title: '令牌',
                 key: 'token',
-                render: (text, record) => (
-                    <Space>
-                        <Text strong>{tokens[record.id] || '未生成'}</Text>
-                        <CountdownTimer onComplete={createHandleComplete(record.id)}/>
-                    </Space>
-                ),
+                render: (text, record) => {
+                    const hasValidToken = tokens[record.id] && !isTokenExpired(record.id);
+                    return (
+                        <Space>
+                            <Text strong style={{color: hasValidToken ? '#52c41a' : '#d9d9d9'}}>
+                                {tokens[record.id] || '点击生成'}
+                            </Text>
+                            <CountdownTimer onComplete={createHandleComplete(record.id)}/>
+                        </Space>
+                    );
+                },
             },
             {
                 title: '操作',
                 key: 'action',
                 render: (text, record) => (
                     <Space>
-                        <Button onClick={() => generateToken(record.id)} type="primary" size="small">
+                        <Button onClick={() => generateToken(record.id, true)} type="primary" size="small">
                             生成令牌
                         </Button>
                         <Button onClick={() => showQRCode(record)} size="small" icon={<QrcodeOutlined/>}>
@@ -630,7 +656,7 @@ function App() {
                 ),
             },
         ];
-    }, [generateToken, showQRCode, deleteTOTP, tokens, formatSecret]);
+    }, [generateToken, showQRCode, deleteTOTP, tokens, formatSecret, isTokenExpired]);
 
     const renderContent = () => (
         <PageContainer>
